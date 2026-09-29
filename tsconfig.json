@@ -7,7 +7,9 @@
     "moduleResolution": "Bundler",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }
