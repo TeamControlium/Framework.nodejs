@@ -29,6 +29,59 @@ Neither is fixable in `src/API_AUTWrapper.ts` — it just forwards whatever
 `body`/request shape it's given straight to `performHTTPOperation`, so the
 ceiling is set entirely by what that function accepts.
 
+Separately, found reviewing the rest of `src/API_AUTWrapper.ts`'s private
+helpers against the current `@controlium/utils` surface (2026-09-29):
+
+- **`invokeHandler`'s generic core has no upstream equivalent.** Its own
+  docstring already says "there's nothing AUT-specific here — it would work
+  identically for any function," which is exactly this doc's own trigger
+  condition for flagging something. It's more than `Utils.timeoutPromise`
+  covers: validates the handler is callable first, catches a *synchronous*
+  throw from invoking it (not just an async rejection) before the timeout
+  race even starts, and funnels every failure path (not callable, threw,
+  rejected, timed out) through one consistently-shaped message. A
+  `funcName`/`paramName`-style upstream version (mirroring `assertType`'s own
+  signature convention) would look roughly like:
+  ```ts
+  static async invokeWithTimeout<Args extends unknown[], Result>(
+    handler: ((...args: Args) => Result | Promise<Result>) | undefined,
+    funcName: string,
+    paramName: string,
+    timeoutMs: number,
+    ...args: Args
+  ): Promise<Result> {
+    Utils.assertType(handler, 'function', funcName, paramName);
+    let resultPromise: Promise<Result>;
+    try {
+      resultPromise = Promise.resolve((handler as (...args: Args) => Result | Promise<Result>)(...args));
+    } catch (err) {
+      const errText = `${funcName}: [${paramName}] threw: ${Utils.errorMessage(err)}`;
+      Log.writeLine(LogLevels.Error, errText);
+      throw new Error(errText);
+    }
+    return Utils.timeoutPromise(resultPromise, { timeoutMS: timeoutMs, friendlyName: paramName });
+  }
+  ```
+  This repo's `invokeHandler` would then delegate to it (keeping the
+  `appName`-aware `fail()` wrapping locally, same pattern as `requireObject`
+  wrapping `assertShape`), rather than reimplementing the invoke-and-timeout
+  logic itself.
+
+- **`requireString`'s "no upstream equivalent" claim is only checked against
+  `AssertShapeMap`, not against `assertType`.** `Utils.assertType(value,
+  'string', funcName, paramName)` already does exactly "fails unless value is
+  a string, empty allowed" — the same check `requireString` hand-rolls. This
+  is the *same* open question as `requireFunction`'s entry below (both are
+  blocked on a stated "double-logging" concern) — worth checking whether that
+  concern actually holds, since `requireObject`/`requireNonEmptyString`/
+  `requirePositiveNumber`/`requirePort` already delegate to `Utils.assertShape`
+  as a single line with no `fail()` call after it and no double-log (`assertShape`
+  logs-and-throws in one step, so there's nothing left to log again). The same
+  one-line pattern looks like it would work identically for `requireFunction`/
+  `requireString` delegating to `Utils.assertType` — flagging for
+  re-examination rather than changing it, since this is a claim about *why*
+  the code is written a certain way, not just what it does.
+
 **Not a Utils candidate, despite looking like one at first:** the same
 completeness review also turned up that `API_AUTWrapper.request()` doesn't
 let a caller override `queryString`, `timeout`, or `proxy` per-request (only

@@ -37,6 +37,7 @@ const makeResponse = (
   statusMessage: status === 200 ? 'OK' : String(status),
   headers,
   body,
+  bodyBuffer: Buffer.from(body),
 });
 
 /** A minimal stub handle — no real server, just spies for closeHandler/getUrlHandler to call. */
