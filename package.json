@@ -7,10 +7,10 @@
   "contributors": [
     "Mat Walker <v-mwalk@alexview.com>"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TeamControlium/test-framework.git"
+    "url": "git+https://github.com/TeamControlium/Framework.nodejs.git"
   },
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
@@ -27,6 +27,10 @@
     "clean": "rm -rf dist coverage",
     "build:esm": "tsc -p tsconfig.build.json",
     "build": "npm run clean && npm run build:esm",
+    "build:esm:debug": "tsc -p tsconfig.build.debug.json",
+    "build:debug": "npm run clean && npm run build:esm:debug",
+    "build:esm:debug:watch": "tsc -p tsconfig.build.debug.json --watch",
+    "build:debug:watch": "npm run clean && npm run build:esm:debug:watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint 'src/**/*.ts' --fix"
@@ -42,7 +46,7 @@
     "@controlium/utils": ">=1.0.2"
   },
   "devDependencies": {
-    "@controlium/utils": "^1.0.2",
+    "@controlium/utils": "^1.1.0",
     "@nestjs/axios": "^12.0.1",
     "@nestjs/common": "^12.1.0",
     "@nestjs/core": "^12.1.0",
@@ -64,5 +68,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.5"
   }
 }

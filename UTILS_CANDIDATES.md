@@ -94,6 +94,45 @@ through. Logged here only so it isn't confused with the two genuine upstream
 asks above — the fix for this one is adding three fields to `RequestOptions`
 in `src/API_AUTWrapper.ts`, not touching `@controlium/utils` at all.
 
+**Known, deliberately-deferred gap (2026-10-08): genuinely duplicated request
+headers (two separate `Key: value` lines with the same `Key`, not comma-joined)
+are impossible via `API_AUTWrapper.request()` today** — surfaced while
+reviewing the cucumber-driver step library's header-configuration steps
+(`Requests to AUT will [replace|include] header data ...`) for completeness.
+Also **not** a Utils candidate — `@controlium/utils` already has everything
+needed, just not wired up through this repo:
+
+- `request()` builds an `APIUtils.HTTPRequest` and calls
+  `APIUtils.performHTTPOperation()` exclusively (`src/API_AUTWrapper.ts:871`),
+  which builds headers via the WHATWG `Headers` class (`buildHeaders()` in
+  `apiUtils/APIUtils.ts`). Per the Fetch Standard, `Headers.append()` combines
+  same-named entries into one comma-joined value for every header except
+  `Set-Cookie` (response-only, irrelevant here) — this is the *contract* of
+  that abstraction, not a bug in `buildHeaders`, so no amount of local
+  patching fixes it.
+- `@controlium/utils` already has the fix, as a *separate* primitive:
+  `APIUtils.performRawHTTPOperation()` writes raw bytes directly to the
+  socket, bypassing `fetch`/`Headers` entirely. Its own `buildRawRequestBytes`
+  already loops over an `HTTPHeaders` value typed as `string[]` and emits one
+  `Key: value` line per array entry — this exact scenario is clearly what it
+  was built for. `API_AUTWrapper.request()` just never calls it.
+
+Deliberately not building this now — the realistic driver is deliberate
+AUT-robustness/security testing ("what does our BFF do if `Authorization`
+shows up twice?"), not everyday functional coverage, so it's logged rather
+than built ahead of an actual need. If/when it is needed, the fix is giving
+`API_AUTWrapper.request()` a path to `performRawHTTPOperation` (a new option,
+or a separate method) instead of being hard-wired to `performHTTPOperation`.
+
+Worth knowing for whoever eventually implements cucumber-driver's still-stubbed
+header-configuration steps (a separate repo, not this one): a header-setting
+method that rejects any header value whose `typeof` isn't
+`string`/`number`/`boolean` — `string[]` included — would silently foreclose
+this later, even once the fix above lands here. Not relevant yet since those
+step bodies don't exist in the new codebase at all yet (still
+`notImplemented()` stubs) — flagging now so this constraint isn't reintroduced
+without noticing.
+
 ## Already exist in `@controlium/utils` — do not reimplement
 
 Found while reviewing `src/API_AUTWrapper.ts` for what's actually generic. These

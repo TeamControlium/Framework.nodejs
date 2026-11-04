@@ -1,0 +1,33 @@
+{
+  "ignorePatterns": [
+    "**/*.spec.ts"
+  ],
+  "env": {
+    "node": true,
+    "es2020": true
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020, // Set ECMAScript version to 2020 to match target
+    "sourceType": "module"
+  },
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "rules": {
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "no-console": "off", // Disable no-console warning if you use console logs (for debugging)
+    "@typescript-eslint/explicit-module-boundary-types": "off", // Disable rule requiring explicit return types on functions
+    "no-var": "error", // Prefer `let`/`const` over `var`
+    "prefer-const": "warn" // Warn if you can use `const` instead of `let`
+  }
+}

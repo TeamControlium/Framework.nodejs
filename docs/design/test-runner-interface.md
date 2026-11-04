@@ -93,30 +93,29 @@ work identically here).
 
 ### Real-world precedent
 
-This isn't a new idea — it's already how the predecessor framework works in
-production. `ea-e2e-utils`'s `CommonHooks.ts` exports `EACucumberBeforeHooks`/
-`EACucumberAfterHooks`, and every consuming test suite's own hooks file
-(e.g. `ea-myaccount-app/apps/myaccount-bff-e2e/hooks/Cucumber.hooks.ts`) calls
-them by hand, at the right point, alongside its own custom hooks:
+This isn't a new idea — it reflects hands-on experience with how a similarly-shaped
+predecessor approach works in production: a pair of shared before/after hook functions
+that every consuming test suite's own hooks file calls by hand, at the right point,
+alongside its own custom hooks:
 
 ```ts
 // Cucumber.hooks.ts — the test suite's own file
-EACucumberBeforeHooks(Cucumber);   // MUST always be first
+sharedCucumberBeforeHooks(Cucumber);   // MUST always be first
 
 Cucumber.BeforeAll(function () { /* suite's own setup */ });
-Cucumber.Before(function (this: EAWorld) { /* suite's own per-scenario setup */ });
+Cucumber.Before(function () { /* suite's own per-scenario setup */ });
 Cucumber.AfterStep(() => { /* suite's own per-step check */ });
 
-EACucumberAfterHooks(Cucumber);    // MUST Always be last
+sharedCucumberAfterHooks(Cucumber);    // MUST Always be last
 ```
 
-The one difference: the old functions take the live `@cucumber/cucumber`
-module as a parameter and register themselves directly with it (hard-coded to
-Cucumber — note the `typeof CucumberBefore` typing in its signature). Ours
-don't need to — `beforeSuite`/`afterSuite`/`beforeTest`/`afterTest` are plain,
-runner-agnostic functions the suite calls *from inside* its own native hook,
-rather than functions that register a native hook themselves. That's what
-makes ours genuinely runner-agnostic where the old ones were Cucumber-only.
+The one difference: that prior approach's functions take the live
+`@cucumber/cucumber` module as a parameter and register themselves directly
+with it (hard-coded to Cucumber). Ours don't need to —
+`beforeSuite`/`afterSuite`/`beforeTest`/`afterTest` are plain, runner-agnostic
+functions the suite calls *from inside* its own native hook, rather than
+functions that register a native hook themselves. That's what makes ours
+genuinely runner-agnostic where that prior approach was Cucumber-only.
 
 ### Nesting is not our concern
 
@@ -148,21 +147,21 @@ support it.
 ## `afterTest` deliberately has no outcome parameter yet
 
 The obvious question: shouldn't `afterTest` know whether the test passed or
-failed? Checked the actual prior art rather than assuming yes. In
-`ea-e2e-utils/src/Cucumber/CommonHooks.ts`, `scenario.result?.status` is used
-in exactly four places, and every *behavioural* one is screenshot-gating:
-take an end-of-step screenshot only on a pass (else defer to end-of-test);
-take an end-of-test screenshot only on a failure. The other two uses are pure
-logging (status message, a timeout-diagnostic hint) riding along, not
-separate decisions.
+failed? Checked the actual prior art rather than assuming yes. In that same
+predecessor approach's shared after-hook, a scenario's pass/fail status is
+used in exactly four places, and every *behavioural* one is
+screenshot-gating: take an end-of-step screenshot only on a pass (else defer
+to end-of-test); take an end-of-test screenshot only on a failure. The other
+two uses are pure logging (status message, a timeout-diagnostic hint) riding
+along, not separate decisions.
 
-There's a second, larger consumer of "did the test pass" in that codebase —
-Jira/Zephyr result reporting — but it turns out **not** to be wired through
-the live hooks at all. It's a wholly separate, out-of-process script
-(`jira-zephyr-control-file.ts`) that `spawnSync`s an entire isolated test run
-per Jira test case, reads the **subprocess's OS exit code** after the whole
-run finishes, and parses report files off disk. It never touches
-`scenario.result` or any live hook.
+There's a second, larger consumer of "did the test pass" in that prior
+experience — test-management-tool result reporting — but it turns out **not**
+to be wired through the live hooks at all. It's a wholly separate,
+out-of-process script that `spawnSync`s an entire isolated test run per test
+case, reads the **subprocess's OS exit code** after the whole run finishes,
+and parses report files off disk. It never touches the live scenario result
+or any live hook.
 
 So the only proven real use for a pass/fail outcome is screenshot-gating —
 which doesn't apply yet, since `@controlium/framework` has no browser/UI
@@ -179,8 +178,8 @@ extra wiring — flagging now so it isn't a surprise later).
 ## "Drivers" are optional convenience, not a required contract
 
 Nothing above requires a driver package to exist. A suite can always
-hand-wire the four functions itself, in four lines, exactly like the old
-`Cucumber.hooks.ts` does today. A driver package's only job is to save a
+hand-wire the four functions itself, in four lines, exactly like the
+prior-art hooks file shown above does. A driver package's only job is to save a
 suite from writing that wiring by hand, and optionally add richer,
 runner-specific extras on top:
 

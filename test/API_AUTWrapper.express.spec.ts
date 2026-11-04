@@ -49,14 +49,14 @@ describe('API_AUTWrapper against a real Express AUT', () => {
   it('rejects clearly (not hangs) when the port is already bound by another instance', async () => {
     // Regression test for the bootstrap fixture's own bind-failure handling: `server.listen()`'s
     // callback never fires on error, so without an `'error'` listener this would hang until
-    // handlerTimeout instead of rejecting immediately with the real EADDRINUSE cause.
+    // autHandlerTimeout instead of rejecting immediately with the real EADDRINUSE cause.
     await expect(
       API_AUTWrapper.create({
         appName: 'ExpressPortClash',
         port: PORT,
         bootstrapper: bootstrap,
         closeHandler,
-        handlerTimeout: 2_000,
+        autHandlerTimeout: 2_000,
       })
     ).rejects.toThrow(/EADDRINUSE/);
   });
