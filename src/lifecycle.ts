@@ -8,7 +8,7 @@ import { API_AUTWrapper } from './API_AUTWrapper.js';
  * ecosystem uses. Runner-agnostic: {@link beforeTest} calls this itself (so every driver
  * gets per-test log-level resolution automatically, with no wiring of its own needed), and
  * a driver's own mid-scenario "reset logging level to settings" step (e.g.
- * `@controlium/cucumber-driver`'s `housekeeping/logging.steps.ts`) calls the exact same
+ * `@controlium/cucumber`'s `housekeeping/logging.steps.ts`) calls the exact same
  * function, so the two can't drift apart into resolving it two different ways.
  *
  * Env var name (`TEST_LOG_LEVEL`), npm config name (`testLogLevel`), and default
@@ -64,7 +64,7 @@ export function resolveMaxLinesFromSettings(): number {
  * Every runner has some equivalent of "default timeout for a test/step" (Cucumber-JS's
  * `setDefaultTimeout`, Jest's `jest.setTimeout`, Vitest's `testTimeout` config) — this
  * resolves the *value*; applying it via whichever runner-specific API is each driver's own
- * job (e.g. `@controlium/cucumber-driver`'s `wireCucumberStepTimeout`).
+ * job (e.g. `@controlium/cucumber`'s `wireCucumberStepTimeout`).
  *
  * @param options - Setting-resolution overrides — a driver with its own established env
  *   var/npm-config naming (e.g. a pre-existing `CUCUMBER_STEP_TIMEOUT`) passes that through

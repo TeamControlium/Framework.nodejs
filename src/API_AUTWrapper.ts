@@ -606,7 +606,7 @@ export class API_AUTWrapper<Handle = unknown> {
    *   unresolved** `ValueExpression.parse` source text per key — see
    *   {@link _pendingNextRequestHeaders}'s own doc comment for why this stays unresolved
    *   until {@link request} actually consumes it. A key here always wins over the same key
-   *   in `headers` once resolved, matching `@controlium/cucumber-driver`'s own
+   *   in `headers` once resolved, matching `@controlium/cucumber`'s own
    *   DataTable-always-wins convention.
    * @throws {Error} If `headers` is not a non-null object.
    */
@@ -1416,7 +1416,7 @@ export class API_AUTWrapper<Handle = unknown> {
       // DataTable cell gets exactly the same "freshest possible state, resolved once, right
       // before use" treatment as the literal/file portion of this same override already
       // gets. A DataTable key always wins over the same key in the literal/file portion,
-      // same convention `@controlium/cucumber-driver`'s session-level step definitions use.
+      // same convention `@controlium/cucumber`'s session-level step definitions use.
       const resolvedDataTableHeaders = await resolveDataTableValueExpressions(pendingOverride.dataTableValueExpressions);
       const combinedOverrideHeaders = { ...pendingOverride.headers, ...resolvedDataTableHeaders };
       APIUtils.assertPrimitiveValues(combinedOverrideHeaders, 'header');
@@ -1843,7 +1843,7 @@ export namespace API_AUTWrapper {
      *
      * Deliberately just a plain string, not a `'json'`/`'xml'`/`'yaml'` enum — this class
      * has no opinion on what body "kinds" exist or which MIME type each maps to; that's
-     * the caller's own policy (e.g. `cucumber-driver`'s Gherkin wording and its own
+     * the caller's own policy (e.g. `cucumber`'s Gherkin wording and its own
      * `APIUtils.APPLICATION_JSON`/`APPLICATION_XML`/`APPLICATION_YAML` constants), not this
      * framework's. This option is deliberately just the primitive "set this if nothing
      * else already did" — the kind→MIME-type mapping lives entirely at the caller.
@@ -2025,7 +2025,7 @@ function resolveRedirectRequest(previous: APIUtils.HTTPRequest, status: number, 
  * Resolves a one-shot override's raw, DataTable-sourced `ValueExpression.parse` source text
  * (see {@link API_AUTWrapper._pendingNextRequestHeaders}'s own doc comment for why this
  * stays unresolved until now) into actual values — `number:`/`boolean:`/`json:`/`file:`
- * casts included, same as `@controlium/cucumber-driver`'s session-level DataTable handling,
+ * casts included, same as `@controlium/cucumber`'s session-level DataTable handling,
  * just resolved here, at consumption time, instead of at step-definition time.
  *
  * `undefined` (no DataTable was ever staged for this override) resolves to `{}` — nothing to

@@ -97,7 +97,7 @@ in `src/API_AUTWrapper.ts`, not touching `@controlium/utils` at all.
 **Known, deliberately-deferred gap (2026-10-08): genuinely duplicated request
 headers (two separate `Key: value` lines with the same `Key`, not comma-joined)
 are impossible via `API_AUTWrapper.request()` today** — surfaced while
-reviewing the cucumber-driver step library's header-configuration steps
+reviewing the cucumber step library's header-configuration steps
 (`Requests to AUT will [replace|include] header data ...`) for completeness.
 Also **not** a Utils candidate — `@controlium/utils` already has everything
 needed, just not wired up through this repo:
@@ -124,7 +124,7 @@ than built ahead of an actual need. If/when it is needed, the fix is giving
 `API_AUTWrapper.request()` a path to `performRawHTTPOperation` (a new option,
 or a separate method) instead of being hard-wired to `performHTTPOperation`.
 
-Worth knowing for whoever eventually implements cucumber-driver's still-stubbed
+Worth knowing for whoever eventually implements cucumber's still-stubbed
 header-configuration steps (a separate repo, not this one): a header-setting
 method that rejects any header value whose `typeof` isn't
 `string`/`number`/`boolean` — `string[]` included — would silently foreclose
