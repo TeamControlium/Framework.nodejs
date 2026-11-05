@@ -1193,6 +1193,188 @@ describe('API_AUTWrapper', () => {
     });
   });
 
+  // ─── Endpoint — createEndpoint()/prepareEndpoint(), cross-registry rules ──────
+
+  describe('Endpoint — createEndpoint()/prepareEndpoint(), cross-registry rules', () => {
+
+    const ENDPOINT_PORT   = 16000;
+    const ENDPOINT_PORT_2 = 16001;
+
+    afterEach(async () => {
+      await API_AUTWrapper.closeAllRegistered();
+    });
+
+    it('createEndpoint() registers the resulting instance, findable via resolveTarget()', () => {
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+      expect(API_AUTWrapper.resolveTarget('[EndpointA]')).toBe(endpoint);
+    });
+
+    it('createEndpoint() never bootstraps — isControlled stays false, kind is "endpoint"', () => {
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+      expect(endpoint.isControlled).toBe(false);
+      expect(endpoint.kind).toBe('endpoint');
+    });
+
+    it('createEndpoint() throws if details is null', () => {
+      expect(() => API_AUTWrapper.createEndpoint(null)).toThrow();
+    });
+
+    it('createEndpoint() throws if appName is omitted/empty', () => {
+      expect(() => API_AUTWrapper.createEndpoint({ appName: '', port: ENDPOINT_PORT })).toThrow();
+    });
+
+    it('createEndpoint() throws if port is missing', () => {
+      expect(() => API_AUTWrapper.createEndpoint({ appName: 'EndpointA' } as API_AUTWrapper.EndpointCreateDetails)).toThrow();
+    });
+
+    it("resolveTarget('EndPoint') resolves to the single registered Endpoint", () => {
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+      expect(API_AUTWrapper.resolveTarget('EndPoint')).toBe(endpoint);
+    });
+
+    it("resolveTarget('EndPoint') throws when zero Endpoints are registered", () => {
+      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/no Endpoint is currently registered/);
+    });
+
+    it("resolveTarget('EndPoint') throws — ambiguous — when more than one Endpoint is registered", () => {
+      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+      API_AUTWrapper.createEndpoint({ appName: 'EndpointB', port: ENDPOINT_PORT_2 });
+      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/2 Endpoints are currently registered \(\[EndpointA, EndpointB\]\)/);
+    });
+
+    it('resolveTarget([name]) throws clearly when nothing is registered under that name', () => {
+      expect(() => API_AUTWrapper.resolveTarget('[NeverRegistered]')).toThrow(/is registered as neither an AUT nor an Endpoint/);
+    });
+
+    it('createEndpoint() throws if appName is already registered as an AUT (cross-registry)', async () => {
+      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(() => API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT })).toThrow(/\[CreateRegApp\] is already registered as an Endpoint|\[CreateRegApp\] is already registered as an AUT/);
+    });
+
+    it("create() throws if appName is already registered as an Endpoint (cross-registry) — even though create()'s own same-registry rule alone would allow it", async () => {
+      API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT });
+      await expect(
+        API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler })
+      ).rejects.toThrow(/\[CreateRegApp\] is already registered as an Endpoint/);
+    });
+
+    it('prepareEndpoint() throws if appName is already registered as an AUT (cross-registry)', async () => {
+      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(() => API_AUTWrapper.prepareEndpoint('CreateRegApp')).toThrow(/\[CreateRegApp\] is already registered as an AUT/);
+    });
+
+    it('prepareApplication() throws if appName is already registered as an Endpoint (cross-registry)', () => {
+      API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT });
+      expect(() => API_AUTWrapper.prepareApplication('CreateRegApp', {})).toThrow(/\[CreateRegApp\] is already registered as an Endpoint/);
+    });
+
+    it('prepareEndpoint() resolves config from endpointDetails settings and registers it', () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { endpointDetails: { EndpointA: { port: ENDPOINT_PORT, host: 'example.test' } } } });
+      try {
+        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointA');
+        expect(endpoint.port).toBe(ENDPOINT_PORT);
+        expect(endpoint.host).toBe('example.test');
+        expect(endpoint.kind).toBe('endpoint');
+      } finally {
+        Settings.clearContext();
+      }
+    });
+
+    it('prepareEndpoint() throws clearly when no port is configured for it', () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { endpointDetails: { EndpointA: {} } } });
+      try {
+        expect(() => API_AUTWrapper.prepareEndpoint('EndpointA')).toThrow(/\[EndpointA\] no 'port' available/);
+      } finally {
+        Settings.clearContext();
+      }
+    });
+
+    it('closeAllRegistered() clears both the AUT and Endpoint registries', async () => {
+      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+
+      await API_AUTWrapper.closeAllRegistered();
+
+      expect(() => API_AUTWrapper.getApplication('CreateRegApp')).toThrow(/is not registered/);
+      expect(() => API_AUTWrapper.resolveTarget('[EndpointA]')).toThrow(/is registered as neither/);
+    });
+
+    it('assertRegistryIsEmpty() also reports stale Endpoint registrations, without breaking the existing AUT-only message shape', async () => {
+      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+
+      expect(() => API_AUTWrapper.assertRegistryIsEmpty()).toThrow(/1 application\(s\) still registered[\s\S]*CreateRegApp[\s\S]*plus 1 Endpoint\(s\)[\s\S]*EndpointA/);
+    });
+
+    it('Endpoints are never remembered for leak-detection — assertNoKnownAUTsStillListening stays silent for a live, correctly-reachable Endpoint', async () => {
+      // A real listener, started independently of API_AUTWrapper — simulating a genuinely
+      // external Endpoint. If createEndpoint() ever called _rememberEndpoint(), this would
+      // incorrectly show up as "still listening" at the start of whatever test runs next.
+      const server = await makeRawBootstrapper()(ENDPOINT_PORT);
+      try {
+        API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+        await expect(API_AUTWrapper.assertNoKnownAUTsStillListening()).resolves.not.toThrow();
+      } finally {
+        await rawCloseHandler(server);
+      }
+    });
+
+    it('request()/.transactions/.lastResponse/.setHeaders() all work on an Endpoint exactly as on an AUT', async () => {
+      mockPerform.mockResolvedValue(makeResponse());
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+
+      endpoint.setHeaders({ Authorization: 'Bearer xyz' });
+      await endpoint.request('GET', '/ping');
+
+      expect(endpoint.lastResponse.status).toBe(200);
+      expect(endpoint.transactions).toHaveLength(1);
+      expect(endpoint.transactions[0].target).toEqual({ kind: 'endpoint', name: 'EndpointA' });
+    });
+  });
+
+  // ─── resolveTarget() ────────────────────────────────────────────────────────
+
+  describe('resolveTarget()', () => {
+
+    const RESOLVE_PORT = 16100;
+
+    afterEach(async () => {
+      await API_AUTWrapper.closeAllRegistered();
+    });
+
+    it("resolves 'AUT' to the single registered AUT via getApplication()", async () => {
+      const aut = await API_AUTWrapper.create({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(API_AUTWrapper.resolveTarget('AUT')).toBe(aut);
+    });
+
+    it("resolves 'EndPoint' to the single registered Endpoint", () => {
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: RESOLVE_PORT });
+      expect(API_AUTWrapper.resolveTarget('EndPoint')).toBe(endpoint);
+    });
+
+    it("resolves '[name]' to an AUT registered under that name", async () => {
+      const aut = await API_AUTWrapper.create({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(API_AUTWrapper.resolveTarget('[CreateRegApp]')).toBe(aut);
+    });
+
+    it("resolves '[name]' to an Endpoint registered under that name when no AUT exists under it", () => {
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: RESOLVE_PORT });
+      expect(API_AUTWrapper.resolveTarget('[EndpointA]')).toBe(endpoint);
+    });
+
+    it("throws a clear combined error when '[name]' is registered as neither", () => {
+      expect(() => API_AUTWrapper.resolveTarget('[NeverRegistered]')).toThrow(/\[NeverRegistered\] is registered as neither an AUT nor an Endpoint/);
+    });
+
+    it("propagates getApplication()'s own zero/ambiguous error for the bare 'AUT' case", () => {
+      expect(() => API_AUTWrapper.resolveTarget('AUT')).toThrow(/no AUT is currently registered/);
+    });
+
+    it("propagates the equivalent zero/ambiguous error for the bare 'EndPoint' case", () => {
+      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/no Endpoint is currently registered/);
+    });
+  });
+
   // ─── loadSettings() ─────────────────────────────────────────────────────────
 
   describe('loadSettings()', () => {
@@ -1447,6 +1629,44 @@ describe('API_AUTWrapper', () => {
         const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
         expect(() => aut.loadSettings()).not.toThrow();
+      });
+    });
+
+    describe('loadSettings() — Endpoint kind', () => {
+
+      afterEach(async () => {
+        delete process.env.CONTROLIUM_ENDPOINT_SETTINGS_PREFIX;
+        await API_AUTWrapper.closeAllRegistered();
+      });
+
+      it('resolves from the endpointDetails prefix by default, not testAUTDetails', () => {
+        setAutSettings('endpointDetails', { EndpointSettingsApp: { port: SETTINGS_PORT } });
+
+        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+
+        expect(endpoint.port).toBe(SETTINGS_PORT);
+      });
+
+      it('uses a configurable Endpoint settings prefix via CONTROLIUM_ENDPOINT_SETTINGS_PREFIX / endpointSettingsPrefix', () => {
+        process.env.CONTROLIUM_ENDPOINT_SETTINGS_PREFIX = 'customEndpointPrefix';
+        setAutSettings('customEndpointPrefix', { EndpointSettingsApp: { port: SETTINGS_PORT_2 } });
+
+        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+
+        expect(endpoint.port).toBe(SETTINGS_PORT_2);
+      });
+
+      it('never resolves or applies autHandlerTimeout for an Endpoint — stays at its constructor default of 30_000', () => {
+        setAutSettings('endpointDetails', { EndpointSettingsApp: { port: SETTINGS_PORT, autHandlerTimeout: 9999 } });
+
+        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+
+        expect(endpoint.autHandlerTimeout).toBe(30_000);
+      });
+
+      it('still requires a port, from settings or already set, exactly like an AUT', () => {
+        setAutSettings('endpointDetails', { EndpointSettingsApp: {} });
+        expect(() => API_AUTWrapper.prepareEndpoint('EndpointSettingsApp')).toThrow(/\[EndpointSettingsApp\] no 'port' available/);
       });
     });
   });
@@ -1714,6 +1934,30 @@ describe('API_AUTWrapper', () => {
       await aut.request('GET', '/test');
       await aut.close();
       expect(aut.transactions).toHaveLength(0);
+    });
+
+    it('a transaction recorded against an AUT carries target: { kind: "aut", name }', async () => {
+      mockPerform.mockResolvedValue(makeResponse());
+      await aut.request('GET', '/test');
+      expect(aut.lastTransaction.target).toEqual({ kind: 'aut', name: 'AUT' });
+    });
+
+    it('a transaction recorded against an Endpoint carries target: { kind: "endpoint", name }', async () => {
+      mockPerform.mockResolvedValue(makeResponse());
+      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'TransactionEndpoint', port: DEFAULT_PORT });
+      try {
+        await endpoint.request('GET', '/test');
+        expect(endpoint.lastTransaction.target).toEqual({ kind: 'endpoint', name: 'TransactionEndpoint' });
+      } finally {
+        await API_AUTWrapper.closeAllRegistered();
+      }
+    });
+
+    it('an error-only transaction (target did not respond) still carries the correct target', async () => {
+      mockPerform.mockRejectedValue(new Error('connection refused'));
+      await aut.request('GET', '/test');
+      expect(aut.lastTransaction.error).toBeDefined();
+      expect(aut.lastTransaction.target).toEqual({ kind: 'aut', name: 'AUT' });
     });
   });
 

@@ -3,7 +3,7 @@ import net from 'node:net';
 
 import { config as loadDotenvFile } from 'dotenv';
 
-import { APIUtils, Detokeniser, JsonUtils, Log, LogLevels, Settings, Utils, ValueExpression } from '@controlium/utils';
+import { APIUtils, Detokeniser, JsonUtils, Log, LogLevels, Settings, StringUtils, Utils, ValueExpression } from '@controlium/utils';
 import type { LogLevel } from '@controlium/utils';
 
 /**
@@ -156,6 +156,15 @@ export class API_AUTWrapper<Handle = unknown> {
   private _autHandlerTimeout: number;
   private _headers: APIUtils.HTTPHeaders = {};
   private _queryParams: APIUtils.QueryParams = {};
+  // 'aut' for every instance created via create()/prepareApplication() (the default —
+  // unchanged behaviour for every existing caller); 'endpoint' only for one created via
+  // createEndpoint()/prepareEndpoint(). Never settable by a caller — set directly on the
+  // instance by those four static factories only, immediately after construction. Governs
+  // which settings prefix/registry loadSettings() resolves against, whether it also
+  // resolves autHandlerTimeout (an Endpoint has no bootstrapper/closeHandler/getUrlHandler
+  // for that timeout to ever bound), and what Transaction.target records for every request
+  // sent through this instance.
+  private _kind: 'aut' | 'endpoint' = 'aut';
 
   // ─── Instance state ───────────────────────────────────────────────────────
 
@@ -206,8 +215,9 @@ export class API_AUTWrapper<Handle = unknown> {
    * @throws {Error} if `bootstrapper` or `closeHandler` is missing or not a function,
    *   `getUrlHandler` is provided but not a function, no port is set, host is not
    *   localhost, `bootstrapper` throws, rejects, resolves with `null`/`undefined`,
-   *   does not settle within `autHandlerTimeout`, or `appName` is already registered
-   *   and currently running (`close()` it first).
+   *   does not settle within `autHandlerTimeout`, `appName` is already registered
+   *   and currently running (`close()` it first), or `appName` is already registered as an
+   *   Endpoint (see {@link createEndpoint}/{@link prepareEndpoint}).
    */
   public static async create<Handle = unknown>(details: API_AUTWrapper.CreateDetails<Handle> | null): Promise<API_AUTWrapper<Handle>> {
     // `details` is the very first thing any caller touches — validate before reading a
@@ -232,6 +242,7 @@ export class API_AUTWrapper<Handle = unknown> {
     if (!Utils.isUndefined(existingEntry) && existingEntry.isControlled) {
       fail(wrapper.appName, 'is already running — close() it before calling create() again with the same name');
     }
+    API_AUTWrapper._assertNoCrossRegistryCollision(wrapper.appName, 'aut');
 
     wrapper._closeHandler  = details.closeHandler;
     wrapper._getUrlHandler = details.getUrlHandler;
@@ -255,6 +266,41 @@ export class API_AUTWrapper<Handle = unknown> {
    * up again by name.
    */
   private static _registry = new Map<string, API_AUTWrapper>();
+
+  /**
+   * Named-Endpoint registry used by {@link createEndpoint}/{@link prepareEndpoint}/
+   * {@link resolveTarget}/{@link closeAllRegistered}. Sibling to {@link _registry},
+   * deliberately separate — an Endpoint is never looked up via {@link getApplication}, and
+   * an AUT is never looked up via the private endpoint-lookup helper {@link resolveTarget}
+   * uses. See {@link _assertNoCrossRegistryCollision} for why a name can never legitimately
+   * appear in both registries at once.
+   */
+  private static _endpointRegistry = new Map<string, API_AUTWrapper>();
+
+  /**
+   * Fails if `appName` is already registered in the *other* registry (AUT vs Endpoint) —
+   * unconditionally, regardless of whether that other entry's {@link isControlled}/running
+   * state would otherwise make it replaceable. Called by {@link create}/
+   * {@link prepareApplication}/{@link createEndpoint}/{@link prepareEndpoint}, before each
+   * registers anything. There is no legitimate reuse case for one name meaning both an AUT
+   * and an Endpoint at once — this is deliberately stricter than {@link _registry}'s/
+   * {@link _endpointRegistry}'s own same-registry collision rule (see {@link create}'s own
+   * doc comment), which only ever blocks a still-running entry.
+   */
+  private static _assertNoCrossRegistryCollision(appName: string, kind: 'aut' | 'endpoint'): void {
+    const otherRegistry  = kind === 'aut' ? API_AUTWrapper._endpointRegistry : API_AUTWrapper._registry;
+    const otherKindLabel = kind === 'aut' ? 'an Endpoint' : 'an AUT';
+    if (otherRegistry.has(appName)) {
+      fail(appName, `is already registered as ${otherKindLabel} — an application name cannot be both an AUT and an Endpoint. Choose a different name.`);
+    }
+  }
+
+  // NOTE: despite the shared word "endpoint", _everKnownEndpoints (below) is unrelated to
+  // the Endpoint registration concept above (createEndpoint()/prepareEndpoint()/
+  // _endpointRegistry/resolveTarget()) — this field is purely post-test TCP leak-detection
+  // for AUTs this process itself bootstrapped. An Endpoint is never bootstrapped by this
+  // process, so it is never recorded here (see createEndpoint()/prepareEndpoint()'s own doc
+  // comments — neither ever calls _rememberEndpoint()).
 
   /**
    * Every AUT name this process has itself actually **bootstrapped** — i.e. a real
@@ -331,8 +377,9 @@ export class API_AUTWrapper<Handle = unknown> {
    * @throws {Error} if `appName` is missing, if this name is already registered **and
    *   currently running** (stop it via {@link stopApplication} before preparing it again —
    *   re-preparing a running app would resolve new configuration without anything actually
-   *   re-binding to it), or if {@link loadSettings} finds no settings configured for
-   *   `appName`.
+   *   re-binding to it), if `appName` is already registered as an Endpoint (see
+   *   {@link createEndpoint}/{@link prepareEndpoint}), or if {@link loadSettings} finds no
+   *   settings configured for `appName`.
    */
   public static prepareApplication<Handle = unknown>(
     appName: string,
@@ -345,6 +392,7 @@ export class API_AUTWrapper<Handle = unknown> {
     if (!Utils.isUndefined(existing) && existing.isControlled) {
       fail(appName, 'is already running — stopApplication() it before preparing it again');
     }
+    API_AUTWrapper._assertNoCrossRegistryCollision(appName, 'aut');
 
     const wrapper = new API_AUTWrapper<Handle>({ appName });
     wrapper.loadSettings();
@@ -479,6 +527,10 @@ export class API_AUTWrapper<Handle = unknown> {
   public static async closeAllRegistered(): Promise<void> {
     const entries = [...API_AUTWrapper._registry.entries()];
     API_AUTWrapper._registry.clear();
+    // Endpoints never have a handle/closeHandler — nothing to await-close, just drop the
+    // registration itself, so one test's Endpoint can never leak into the next (same
+    // per-test atomicity guarantee _registry's own clearing already gives every AUT).
+    API_AUTWrapper._endpointRegistry.clear();
 
     const results = await Promise.allSettled(entries.map(([, wrapper]) => wrapper.close()));
     const failures = results
@@ -514,15 +566,26 @@ export class API_AUTWrapper<Handle = unknown> {
    * registration (with its own stale `transactions`/`headers`/session state) surviving into
    * the next test even though nothing is "still listening" for that name at all.
    *
-   * @throws {Error} listing every `appName` still present in the registry, if any are.
+   * Also checks {@link _endpointRegistry} for the identical reason — {@link
+   * closeAllRegistered} clears both unconditionally, so a stale Endpoint here means the
+   * same catastrophic "teardown never ran to completion" failure, just on the other
+   * registry. Reported as a separate, appended clause rather than folded into the same
+   * count, so the pinned `"N application(s) still registered"` wording other tooling may
+   * already match against stays unchanged for the AUT-only case.
+   *
+   * @throws {Error} listing every `appName` still present in either registry, if any are.
    */
   public static assertRegistryIsEmpty(): void {
-    const staleNames = [...API_AUTWrapper._registry.keys()];
-    if (staleNames.length > 0) {
+    const staleNames         = [...API_AUTWrapper._registry.keys()];
+    const staleEndpointNames = [...API_AUTWrapper._endpointRegistry.keys()];
+    if (staleNames.length > 0 || staleEndpointNames.length > 0) {
       fail(
         'AUT',
         `${staleNames.length} application(s) still registered at test start — the previous ` +
-        `test's afterTest()/closeAllRegistered() never ran to completion: [${staleNames.join(', ')}]`
+        `test's afterTest()/closeAllRegistered() never ran to completion: [${staleNames.join(', ')}]` +
+        (staleEndpointNames.length > 0
+          ? ` (plus ${staleEndpointNames.length} Endpoint(s) still registered: [${staleEndpointNames.join(', ')}])`
+          : '')
       );
     }
   }
@@ -556,6 +619,162 @@ export class API_AUTWrapper<Handle = unknown> {
         `${stillListening.length} AUT(s) still have something listening at test start — the previous test's teardown did not actually stop them:\n${stillListening.join('\n')}`
       );
     }
+  }
+
+  // ─── Endpoint registry & factory ───────────────────────────────────────────
+
+  /**
+   * Creates, configures, and registers a new Endpoint — a connection target this process
+   * never starts, stops, or owns the lifecycle of (no `bootstrapper`/`closeHandler`/
+   * `getUrlHandler` — see {@link EndpointCreateDetails}), registered so {@link request}/
+   * {@link setHeaders}/{@link transactions}/etc. all work on it identically to an AUT (same
+   * underlying class, same instance methods). Use this for a genuinely external/
+   * already-running HTTP target (a shared staging service, a third-party API) that this
+   * suite only ever talks *to*, never manages.
+   *
+   * Parallel to, but deliberately separate from, {@link create} — rather than overloading
+   * `create()` with an extra parameter, which would risk its existing signature/behaviour.
+   *
+   * Unlike {@link create}'s `appName` (which defaults to `'AUT'` when omitted), `appName` is
+   * mandatory here — `'AUT'`/`'EndPoint'` are both reserved literals {@link resolveTarget}
+   * treats specially; silently defaulting an unnamed Endpoint to `'AUT'` (what the shared
+   * constructor would otherwise do) would collide with that meaning. `port` is likewise
+   * required eagerly here, unlike the shared constructor's own optional `port` — an AUT only
+   * ever discovers a missing port at `_startAUT()` time, but an Endpoint never calls
+   * `_startAUT()` at all, so without this explicit check a portless Endpoint would construct
+   * successfully and only fail much later, confusingly, at its first {@link request} call.
+   *
+   * @param details.appName - Name this Endpoint is registered under (see
+   *   {@link resolveTarget}). Required, non-empty.
+   * @param details.port - Port the Endpoint listens on. Required.
+   * @param details.host - Hostname. Defaults to `'localhost'` — but, unlike an AUT, never
+   *   required to equal `'localhost'`: this instance never calls `_startAUT()`, so that
+   *   enforcement point never runs for it.
+   * @param details.protocol - `'http'` or `'https'`. Defaults to `'http'`.
+   * @param details.requestTimeout - Request timeout in ms. Defaults to `30_000`.
+   * @param details.proxy - Optional proxy URL.
+   * @returns The registered {@link API_AUTWrapper} Endpoint instance.
+   * @throws {Error} if `details` is missing, `appName`/`port` is missing or invalid, or
+   *   `appName` is already registered as an Endpoint or as an AUT.
+   */
+  public static createEndpoint(details: API_AUTWrapper.EndpointCreateDetails | null): API_AUTWrapper {
+    requireObject(details, 'Endpoint', 'createEndpoint() details');
+    requireNonEmptyString(details.appName, 'Endpoint', 'appName');
+    requirePort(details.port, details.appName, 'port');
+    API_AUTWrapper._assertNoCrossRegistryCollision(details.appName, 'endpoint');
+
+    const wrapper = new API_AUTWrapper({
+      appName:  details.appName,
+      port:     details.port,
+      host:     details.host,
+      protocol: details.protocol,
+      requestTimeout: details.requestTimeout,
+      proxy:    details.proxy,
+    });
+    wrapper._kind = 'endpoint';
+
+    API_AUTWrapper._endpointRegistry.set(wrapper.appName, wrapper);
+    Log.writeLine(LogLevels.TestInformation, `[${wrapper.appName}] Endpoint registered: ${wrapper.protocol}://${wrapper.host}:${wrapper.port}`);
+    return wrapper;
+  }
+
+  /**
+   * Resolves a named Endpoint's connection details entirely from settings (see
+   * {@link loadSettings}, branched for {@link kind} `'endpoint'`) and registers the result
+   * under `appName`. There is no two-step "prepare then start" story here, unlike
+   * {@link prepareApplication}/{@link startApplication} — an Endpoint is fully usable the
+   * moment this returns; there is no `startEndpoint()`.
+   *
+   * @param appName - Name this Endpoint is registered under, and the key used to look up its
+   *   settings block (`$.endpointDetails.<appName>.*` by default — see
+   *   {@link resolveEndpointSettingsPrefix}). Required, non-empty.
+   * @returns The registered {@link API_AUTWrapper} Endpoint instance.
+   * @throws {Error} if `appName` is missing; if already registered as an Endpoint or as an
+   *   AUT; or if {@link loadSettings} finds no `port` configured for `appName`.
+   */
+  public static prepareEndpoint(appName: string): API_AUTWrapper {
+    requireNonEmptyString(appName, 'Endpoint', 'appName');
+    API_AUTWrapper._assertNoCrossRegistryCollision(appName, 'endpoint');
+
+    const wrapper = new API_AUTWrapper({ appName });
+    wrapper._kind = 'endpoint';
+    wrapper.loadSettings();
+
+    API_AUTWrapper._endpointRegistry.set(appName, wrapper);
+    Log.writeLine(LogLevels.FrameworkDebug, `[${appName}] Endpoint prepared from settings`);
+    return wrapper;
+  }
+
+  /**
+   * Resolves "the single registered Endpoint" — the private counterpart to
+   * {@link getApplication}'s own no-name resolution, used only by {@link resolveTarget} for
+   * the bare `'EndPoint'` case. Deliberately **not** a public `getEndpoint()` — since a name
+   * can never legitimately be registered as both an AUT and an Endpoint (see
+   * {@link _assertNoCrossRegistryCollision}), there is no case where a caller would need to
+   * choose between two separate public lookup methods; {@link resolveTarget} is the single
+   * public entry point for all three target forms.
+   */
+  private static _singleRegisteredEndpoint<Handle = unknown>(): API_AUTWrapper<Handle> {
+    const registered = [...API_AUTWrapper._endpointRegistry.entries()];
+    if (registered.length === 0) {
+      fail('EndPoint', 'cannot resolve — no Endpoint is currently registered (did createEndpoint()/prepareEndpoint() run first?)');
+    }
+    if (registered.length > 1) {
+      fail('EndPoint', `cannot resolve — ${registered.length} Endpoints are currently registered ([${registered.map(([name]) => name).join(', ')}]); specify which one by name`);
+    }
+    return registered[0][1] as API_AUTWrapper<Handle>;
+  }
+
+  /**
+   * Resolves a step/runner's `AUT` / `EndPoint` / `[name]` target text into the registered
+   * {@link API_AUTWrapper} instance it refers to — runner-agnostic, so `@controlium/cucumber`'s
+   * (and any future runner's) step-defs just call it rather than duplicating this three-way
+   * dispatch themselves. Same runner-agnostic-primitive split as `APIUtils.resolveLiteralRequestBody`/
+   * `resolveRequestBodyModifications`.
+   *
+   * - `'AUT'` → {@link getApplication} with no name.
+   * - `'EndPoint'` → {@link _singleRegisteredEndpoint} (no public equivalent — see its own
+   *   doc comment for why).
+   * - Anything else is treated as a `[name]`-bracketed reference: brackets stripped, then
+   *   resolved by checking **both** registries directly for membership (not a try/catch
+   *   cascade through {@link getApplication}). Cross-registry collisions are already blocked
+   *   at registration time (see {@link _assertNoCrossRegistryCollision}), so a name should
+   *   never appear in both — but this is a just-in-time re-check at the point of use, not an
+   *   assumption: exactly one match is required, loudly, every time. Finding the name in
+   *   *both* registries throws a distinct "should be impossible" error rather than silently
+   *   picking one, since that would mean the registration-time guard was somehow bypassed —
+   *   a defect worth surfacing immediately, not masking.
+   *
+   * @param requestTarget - The raw captured step text: `'AUT'`, `'EndPoint'`, or `[name]`.
+   * @returns The resolved {@link API_AUTWrapper} instance — an AUT or an Endpoint.
+   * @throws {Error} If `requestTarget`'s bracketed name is registered as neither; if it is
+   *   (impossibly) registered as both; or any of the usual zero/ambiguous-registration
+   *   errors {@link getApplication}/{@link _singleRegisteredEndpoint} themselves throw for
+   *   the unqualified `'AUT'`/`'EndPoint'` cases.
+   */
+  public static resolveTarget<Handle = unknown>(requestTarget: string): API_AUTWrapper<Handle> {
+    requireNonEmptyString(requestTarget, 'AUT', 'requestTarget');
+
+    if (requestTarget === 'AUT') return API_AUTWrapper.getApplication<Handle>();
+    if (requestTarget === 'EndPoint') return API_AUTWrapper._singleRegisteredEndpoint<Handle>();
+
+    const name = StringUtils.trimChar(StringUtils.trimChar(requestTarget, '['), ']');
+
+    const inAUTRegistry      = API_AUTWrapper._registry.has(name);
+    const inEndpointRegistry = API_AUTWrapper._endpointRegistry.has(name);
+
+    if (inAUTRegistry && inEndpointRegistry) {
+      fail(
+        name,
+        'is registered as BOTH an AUT and an Endpoint — this should be impossible (cross-registry ' +
+        'registration is blocked at create()/prepareApplication()/createEndpoint()/prepareEndpoint() ' +
+        'time); the registration-time guard has been bypassed somewhere.'
+      );
+    }
+    if (inAUTRegistry) return API_AUTWrapper.getApplication<Handle>(name);
+    if (inEndpointRegistry) return API_AUTWrapper._endpointRegistry.get(name) as API_AUTWrapper<Handle>;
+
+    fail(name, 'is registered as neither an AUT nor an Endpoint — nothing to find (did create()/prepareApplication()/createEndpoint()/prepareEndpoint() run for this name?)');
   }
 
   // ─── One-shot "next request" header override ───────────────────────────────
@@ -952,11 +1171,15 @@ export class API_AUTWrapper<Handle = unknown> {
    * configured-but-missing `.env` file fails loudly rather than silently continuing
    * without it — both deliberate, not oversights.
    *
-   * Settings are looked up at `$.<prefix>.<appName>.<field>`, where `<prefix>` defaults
-   * to `'testAUTDetails'` (overridable via the `CONTROLIUM_AUT_SETTINGS_PREFIX` env var
-   * or the `autSettingsPrefix` npm package config — never via the profile itself, which
-   * would be a chicken-and-egg problem) and `<appName>` is this instance's own
-   * {@link appName}.
+   * Settings are looked up at `$.<prefix>.<appName>.<field>`, where `<appName>` is this
+   * instance's own {@link appName} and `<prefix>` depends on {@link kind}: for an AUT,
+   * defaults to `'testAUTDetails'` (overridable via `CONTROLIUM_AUT_SETTINGS_PREFIX`/
+   * `autSettingsPrefix` — see {@link resolveSettingsPrefix}); for an Endpoint, defaults to
+   * `'endpointDetails'` (overridable via `CONTROLIUM_ENDPOINT_SETTINGS_PREFIX`/
+   * `endpointSettingsPrefix` — see {@link resolveEndpointSettingsPrefix}). Never via the
+   * profile itself, which would be a chicken-and-egg problem. An Endpoint additionally never
+   * resolves `autHandlerTimeout` at all — it has no bootstrapper/closeHandler/getUrlHandler
+   * for that timeout to ever bound.
    *
    * @param logLevel - Log level for the one headline summary line (the final effective
    *   configuration, and the "loaded .env file" line if one was configured) — the rest of
@@ -971,7 +1194,7 @@ export class API_AUTWrapper<Handle = unknown> {
    *   `dotEnvPath` doesn't exist or fails to parse.
    */
   public loadSettings(logLevel: LogLevel = LogLevels.TestInformation): void {
-    const prefix = resolveSettingsPrefix();
+    const prefix = this._kind === 'endpoint' ? resolveEndpointSettingsPrefix() : resolveSettingsPrefix();
     const base = `$.${prefix}.${this._appName}`;
 
     const portResult = this._resolveAndLogSetting(base, 'port');
@@ -1007,9 +1230,15 @@ export class API_AUTWrapper<Handle = unknown> {
       this.proxy = proxyResult.value as string;
     }
 
-    const autHandlerTimeoutResult = this._resolveAndLogSetting(base, 'autHandlerTimeout');
-    if (!Utils.isUndefined(autHandlerTimeoutResult.value)) {
-      this.autHandlerTimeout = coerceToNumber(autHandlerTimeoutResult.value);
+    // An Endpoint has no bootstrapper/closeHandler/getUrlHandler for this timeout to ever
+    // bound (it never calls _startAUT()) — so, unlike every other field above/below, this
+    // one is never resolved at all for an Endpoint, not even to apply a configured-but-unused
+    // value. this._autHandlerTimeout simply stays at its constructor default.
+    if (this._kind === 'aut') {
+      const autHandlerTimeoutResult = this._resolveAndLogSetting(base, 'autHandlerTimeout');
+      if (!Utils.isUndefined(autHandlerTimeoutResult.value)) {
+        this.autHandlerTimeout = coerceToNumber(autHandlerTimeoutResult.value);
+      }
     }
 
     const resourcePathPreambleResult = this._resolveAndLogSetting(base, 'resourcePathPreamble');
@@ -1051,7 +1280,7 @@ export class API_AUTWrapper<Handle = unknown> {
       `  port: ${this._port}\n` +
       `  protocol: ${this._protocol}\n` +
       `  requestTimeout: ${this._requestTimeout}\n` +
-      `  autHandlerTimeout: ${this._autHandlerTimeout}\n` +
+      (this._kind === 'aut' ? `  autHandlerTimeout: ${this._autHandlerTimeout}\n` : '') +
       `  proxy: ${this._proxy ?? '(none)'}\n` +
       `  resourcePathPreamble: ${this._resourcePathPreamble ?? '(none)'}`,
       { suppressMultilinePreamble: true }
@@ -1139,6 +1368,14 @@ export class API_AUTWrapper<Handle = unknown> {
    * `true` if this AUT has been successfully started and is currently running.
    */
   public get isControlled(): boolean { return this._isControlled; }
+
+  // ─── State: kind ───────────────────────────────────────────────────────────
+
+  /**
+   * `'aut'` for an instance created via {@link create}/{@link prepareApplication}; `'endpoint'`
+   * for one created via {@link createEndpoint}/{@link prepareEndpoint}. See {@link _kind}.
+   */
+  public get kind(): 'aut' | 'endpoint' { return this._kind; }
 
   // ─── Headers ──────────────────────────────────────────────────────────────
 
@@ -1590,7 +1827,7 @@ export class API_AUTWrapper<Handle = unknown> {
       // name through lets its request/response detail logging (see its own doc comment)
       // show which AUT a dump belongs to.
       const response = await APIUtils.performRawHTTPOperation(httpRequest, { targetFriendlyName: this._appName });
-      this._transactions.push({ request: httpRequest, response });
+      this._transactions.push({ request: httpRequest, response, target: { kind: this._kind, name: this._appName } });
       return response;
     } catch (err) {
       // Catches any throw from performRawHTTPOperation (connection refused, DNS failure,
@@ -1600,7 +1837,7 @@ export class API_AUTWrapper<Handle = unknown> {
       // outcome rather than an exception to catch itself.
       const errText = Utils.errorMessage(err);
       Log.writeLine(LogLevels.Error, `[${this._appName}] did not respond to [${httpRequest.method} ${httpRequest.resourcePath}]: ${errText}`);
-      this._transactions.push({ request: httpRequest, error: errText });
+      this._transactions.push({ request: httpRequest, error: errText, target: { kind: this._kind, name: this._appName } });
       return undefined;
     }
   }
@@ -1885,13 +2122,30 @@ export namespace API_AUTWrapper {
   }
 
   /**
-   * A recorded HTTP interaction with this AUT.
-   * If the AUT did not respond, `response` will be undefined and `error` will be populated.
+   * A recorded HTTP interaction with an AUT or an Endpoint.
+   * If the target did not respond, `response` will be undefined and `error` will be
+   * populated. `target` identifies which registered entity (and under what name) this
+   * interaction belongs to — see {@link API_AUTWrapper.kind}/{@link API_AUTWrapper.resolveTarget}.
    */
   export interface Transaction {
     request: APIUtils.HTTPRequest;
     response?: APIUtils.HTTPResponse;
     error?: string;
+    target: { kind: 'aut' | 'endpoint'; name: string };
+  }
+
+  /**
+   * The full, explicit configuration {@link API_AUTWrapper.createEndpoint} accepts. No
+   * `bootstrapper`/`closeHandler`/`getUrlHandler`/`autHandlerTimeout` fields — an Endpoint is
+   * never bootstrapped by this process, so none of those lifecycle concepts apply.
+   */
+  export interface EndpointCreateDetails {
+    appName: string;
+    port: number;
+    host?: string;
+    protocol?: 'http' | 'https';
+    requestTimeout?: number;
+    proxy?: string;
   }
 }
 
@@ -2072,6 +2326,25 @@ function resolveSettingsPrefix(): string {
     defaultValue: DEFAULT_SETTINGS_PREFIX,
   });
   Log.writeLine(LogLevels.FrameworkDebug, `AUT settings prefix: [${value}] (${source})`);
+  return value as string;
+}
+
+/** Default top-level settings key {@link loadSettings} nests every Endpoint's settings under. */
+const DEFAULT_ENDPOINT_SETTINGS_PREFIX = 'endpointDetails';
+
+/**
+ * Resolves the configurable top-level settings prefix {@link loadSettings} nests every
+ * Endpoint's settings block under — the Endpoint-flavoured mirror of
+ * {@link resolveSettingsPrefix} (see its own doc comment; only the env var/npm-config names
+ * and default differ).
+ */
+function resolveEndpointSettingsPrefix(): string {
+  const { value, source } = Settings.get<string>(LogLevels.FrameworkDebug, 'Endpoint settings prefix', {
+    processEnvName: 'CONTROLIUM_ENDPOINT_SETTINGS_PREFIX',
+    npmPackageConfigName: 'endpointSettingsPrefix',
+    defaultValue: DEFAULT_ENDPOINT_SETTINGS_PREFIX,
+  });
+  Log.writeLine(LogLevels.FrameworkDebug, `Endpoint settings prefix: [${value}] (${source})`);
   return value as string;
 }
 
