@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 
-import { API_AUTWrapper } from '../src/API_AUTWrapper';
+import { API_AUTWrapper } from '../src/API_AUT/API_AUTWrapper';
 
 import { bootstrap, closeHandler, getUrlHandler } from './dummy-fastify-server/bootstrap';
 
@@ -10,7 +10,7 @@ describe('API_AUTWrapper against a real Fastify AUT', () => {
   let aut: API_AUTWrapper<FastifyInstance>;
 
   beforeAll(async () => {
-    aut = await API_AUTWrapper.create({
+    aut = await API_AUTWrapper.startNewApplication({
       appName: 'DummyFastify',
       port: PORT,
       bootstrapper: bootstrap,
@@ -24,7 +24,7 @@ describe('API_AUTWrapper against a real Fastify AUT', () => {
   });
 
   it('starts a real Fastify server and reports live', async () => {
-    expect(aut.isControlled).toBe(true);
+    expect(aut.isSelfManaged).toBe(true);
     await expect(aut.isLive()).resolves.toBe(true);
   });
 

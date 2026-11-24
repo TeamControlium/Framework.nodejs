@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { APIUtils, Detokeniser, Log, LogLevels, Settings } from '@controlium/utils';
+import { APIUtils, Log, LogLevels, Settings } from '@controlium/utils';
 
 import { API_AUTWrapper } from './API_AUTWrapper';
 
@@ -141,26 +141,26 @@ describe('API_AUTWrapper', () => {
       await aut?.close();
     });
 
-    it('starts when bootstrapper is passed to create()', async () => {
-      aut = await API_AUTWrapper.create({
+    it('starts when bootstrapper is passed to startNewApplication()', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
         closeHandler: stubCloseHandler,
       });
-      expect(aut.isControlled).toBe(true);
+      expect(aut.isSelfManaged).toBe(true);
       expect(aut.appName).toBe('TestApp');
     });
 
     it('throws when no bootstrapper has been provided', async () => {
       await expect(
-        API_AUTWrapper.create({ appName: 'TestApp', port: DEFAULT_PORT })
+        API_AUTWrapper.startNewApplication({ appName: 'TestApp', port: DEFAULT_PORT })
       ).rejects.toThrow(/No bootstrapper set/);
     });
 
     it('throws when no closeHandler has been provided', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: makeStubBootstrapper(),
@@ -171,7 +171,7 @@ describe('API_AUTWrapper', () => {
     it('throws when port has not been set', async () => {
       await expect(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           bootstrapper: makeStubBootstrapper(),
           closeHandler: stubCloseHandler,
@@ -181,7 +181,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws when host is not localhost', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           host: 'remote.example.com',
@@ -191,9 +191,9 @@ describe('API_AUTWrapper', () => {
       ).rejects.toThrow(/must be 'localhost'/);
     });
 
-    it('propagates bootstrapper failure and leaves isControlled false', async () => {
+    it('propagates bootstrapper failure and leaves isSelfManaged false', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: makeStubBootstrapper({ failToStart: true }),
@@ -204,7 +204,7 @@ describe('API_AUTWrapper', () => {
 
     it('propagates a non-Error bootstrapper failure without masking it', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: makeStubBootstrapper({ failWithNonError: true }),
@@ -213,15 +213,15 @@ describe('API_AUTWrapper', () => {
       ).rejects.toBeDefined();
     });
 
-    it('close resets isControlled', async () => {
-      aut = await API_AUTWrapper.create({
+    it('close resets isSelfManaged', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
         closeHandler: stubCloseHandler,
       });
       await aut.close();
-      expect(aut.isControlled).toBe(false);
+      expect(aut.isSelfManaged).toBe(false);
     });
 
     it('close is safe when nothing is running', async () => {
@@ -231,7 +231,7 @@ describe('API_AUTWrapper', () => {
 
     it('propagates AUT closeHandler failure', async () => {
       const handle = makeStubHandle({ closeShouldFail: true });
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle }),
@@ -242,7 +242,7 @@ describe('API_AUTWrapper', () => {
 
     it('propagates a non-Error closeHandler failure without masking it', async () => {
       const handle = makeStubHandle();
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle }),
@@ -254,7 +254,7 @@ describe('API_AUTWrapper', () => {
     it('closeHandler receives the exact handle the bootstrapper returned', async () => {
       const handle = makeStubHandle();
       const receivedHandles: StubHandle[] = [];
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle }),
@@ -280,7 +280,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws clearly when bootstrapper is not a function', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -292,7 +292,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws clearly when closeHandler is explicitly null', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: makeStubBootstrapper(),
@@ -304,7 +304,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws clearly when getUrlHandler is provided but not a function', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: makeStubBootstrapper(),
@@ -317,7 +317,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws clearly when bootstrapper resolves with undefined', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: vi.fn().mockResolvedValue(undefined),
@@ -328,7 +328,7 @@ describe('API_AUTWrapper', () => {
 
     it('throws clearly when bootstrapper resolves with null', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: vi.fn().mockResolvedValue(null),
@@ -338,7 +338,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('throws clearly when getUrlHandler returns a non-string value', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -346,12 +346,12 @@ describe('API_AUTWrapper', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         getUrlHandler: (() => 12345) as any,
       });
-      await expect(aut.autURL()).rejects.toThrow(/getUrlHandler must return a string/);
+      await expect(aut.resolveURL()).rejects.toThrow(/getUrlHandler must return a string/);
     });
 
     it('times out a bootstrapper that never settles, using a configurable autHandlerTimeout', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: () => new Promise<StubHandle>(() => { /* never resolves */ }),
@@ -362,7 +362,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('times out a closeHandler that never settles', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -375,7 +375,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('times out a getUrlHandler that never settles', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -383,12 +383,12 @@ describe('API_AUTWrapper', () => {
         getUrlHandler: () => new Promise<string>(() => { /* never resolves */ }),
         autHandlerTimeout: 50,
       });
-      await expect(aut.autURL()).rejects.toThrow(/getUrlHandler threw: getUrlHandler: Timeout after 50 ms/);
+      await expect(aut.resolveURL()).rejects.toThrow(/getUrlHandler threw: getUrlHandler: Timeout after 50 ms/);
     });
 
     it('catches a bootstrapper that throws synchronously rather than rejecting', async () => {
       await expect(
-        API_AUTWrapper.create({
+        API_AUTWrapper.startNewApplication({
           appName: 'TestApp',
           port: DEFAULT_PORT,
           bootstrapper: () => { throw new Error('synchronous boom'); },
@@ -400,14 +400,14 @@ describe('API_AUTWrapper', () => {
 
   // ─── Defensive input validation ────────────────────────────────────────────
   // This is test-automation infrastructure — every value crossing a public boundary
-  // (constructor config, create() details, setters, request() args, header objects)
+  // (constructor config, startNewApplication() details, setters, request() args, header objects)
   // is assumed to be untrustworthy at runtime regardless of its declared TS type,
   // since a caller can always bypass static types (JS interop, `any`, a genuine
   // mistake). Each case below simulates exactly that.
 
   describe('Defensive input validation', () => {
 
-    describe('constructor / create() config', () => {
+    describe('constructor / startNewApplication() config', () => {
 
       // These five all delegate to Utils.assertShape (see UTILS_CANDIDATES.md), whose
       // message format is `Cannot [appName] as [label] not a valid 'shape'. Is [...]`.
@@ -476,11 +476,11 @@ describe('API_AUTWrapper', () => {
         expect(() => new API_AUTWrapper({ proxy: '' })).toThrow(/\[proxy\] not a valid 'nonEmptyString'/);
       });
 
-      it('create() rejects null details', async () => {
+      it('startNewApplication() rejects null details', async () => {
         await expect(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          API_AUTWrapper.create(null as any)
-        ).rejects.toThrow(/\[create\(\) details\] not a valid 'nonNullObject'/);
+          API_AUTWrapper.startNewApplication(null as any)
+        ).rejects.toThrow(/\[startNewApplication\(\) details\] not a valid 'nonNullObject'/);
       });
     });
 
@@ -537,7 +537,7 @@ describe('API_AUTWrapper', () => {
       });
     });
 
-    describe('useResourcePathPreamble', () => {
+    describe('switchResourcePathPreamble', () => {
 
       let aut: API_AUTWrapper;
 
@@ -545,7 +545,7 @@ describe('API_AUTWrapper', () => {
         aut = new API_AUTWrapper({ appName: 'PreambleTest', port: DEFAULT_PORT });
         Settings.setContext({
           sourceName: 'TestProfile',
-          parameters: { testAUTDetails: { PreambleTest: { resourcePathPreambles: { V1: '/api/v1', V2: '/api/v2' } } } },
+          parameters: { testAUTs: { PreambleTest: { resourcePathPreambles: { V1: '/api/v1', V2: '/api/v2' } } } },
         });
         aut.loadSettings();
       });
@@ -555,43 +555,43 @@ describe('API_AUTWrapper', () => {
       });
 
       it('switches the effective resourcePathPreamble to the named value', () => {
-        aut.useResourcePathPreamble('V1');
+        aut.switchResourcePathPreamble('V1');
         expect(aut.resourcePathPreamble).toBe('/api/v1');
       });
 
       it('switching names replaces rather than accumulates', () => {
-        aut.useResourcePathPreamble('V1');
-        aut.useResourcePathPreamble('V2');
+        aut.switchResourcePathPreamble('V1');
+        aut.switchResourcePathPreamble('V2');
         expect(aut.resourcePathPreamble).toBe('/api/v2');
         // Switching back confirms it's genuinely recomputed fresh each time, not drifting.
-        aut.useResourcePathPreamble('V1');
+        aut.switchResourcePathPreamble('V1');
         expect(aut.resourcePathPreamble).toBe('/api/v1');
       });
 
       it('combines with a base resourcePathPreamble set directly, without accumulating on repeat switches', () => {
         aut.resourcePathPreamble = '/mounted';
-        aut.useResourcePathPreamble('V1');
+        aut.switchResourcePathPreamble('V1');
         expect(aut.resourcePathPreamble).toBe('/mounted/api/v1');
-        aut.useResourcePathPreamble('V2');
+        aut.switchResourcePathPreamble('V2');
         expect(aut.resourcePathPreamble).toBe('/mounted/api/v2');
       });
 
       it('throws on an unknown name, listing what is actually available', () => {
-        expect(() => aut.useResourcePathPreamble('V3')).toThrow(/\[PreambleTest\].*no resourcePathPreamble named \[V3\].*available: \[V1, V2\]/);
+        expect(() => aut.switchResourcePathPreamble('V3')).toThrow(/\[PreambleTest\].*no resourcePathPreamble named \[V3\].*available: \[V1, V2\]/);
       });
 
       it('throws clearly when nothing is configured at all', () => {
         const bareAut = new API_AUTWrapper({ appName: 'NoPreambles', port: DEFAULT_PORT });
-        expect(() => bareAut.useResourcePathPreamble('V1')).toThrow(/\[NoPreambles\].*no resourcePathPreambles configured at all/);
+        expect(() => bareAut.switchResourcePathPreamble('V1')).toThrow(/\[NoPreambles\].*no resourcePathPreambles configured at all/);
       });
 
       it('rejects a non-string name', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect(() => aut.useResourcePathPreamble(42 as any)).toThrow(/\[name\] not a valid 'nonEmptyString'/);
+        expect(() => aut.switchResourcePathPreamble(42 as any)).toThrow(/\[name\] not a valid 'nonEmptyString'/);
       });
 
       it('close() resets the effective preamble and its base, but the configured map survives a restart', async () => {
-        aut.useResourcePathPreamble('V1');
+        aut.switchResourcePathPreamble('V1');
         expect(aut.resourcePathPreamble).toBe('/api/v1');
 
         await aut.close();
@@ -599,7 +599,7 @@ describe('API_AUTWrapper', () => {
 
         // The map itself is settings-resolved configuration, not session state — still
         // usable without calling loadSettings() again.
-        aut.useResourcePathPreamble('V2');
+        aut.switchResourcePathPreamble('V2');
         expect(aut.resourcePathPreamble).toBe('/api/v2');
       });
     });
@@ -690,40 +690,40 @@ describe('API_AUTWrapper', () => {
     });
 
     it('starts a real Node.js HTTP server and reports live', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'RawApp',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
         closeHandler: rawCloseHandler,
         getUrlHandler: rawGetUrlHandler,
       });
-      expect(aut.isControlled).toBe(true);
+      expect(aut.isSelfManaged).toBe(true);
       await expect(aut.isLive()).resolves.toBe(true);
     });
 
-    it('autURL returns the correct URL from the real server via getUrlHandler', async () => {
-      aut = await API_AUTWrapper.create({
+    it('resolveURL returns the correct URL from the real server via getUrlHandler', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'RawApp',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
         closeHandler: rawCloseHandler,
         getUrlHandler: rawGetUrlHandler,
       });
-      await expect(aut.autURL()).resolves.toBe(`http://localhost:${RAW_SERVER_PORT}`);
+      await expect(aut.resolveURL()).resolves.toBe(`http://localhost:${RAW_SERVER_PORT}`);
     });
 
-    it('autURL throws when no getUrlHandler was provided', async () => {
-      aut = await API_AUTWrapper.create({
+    it('resolveURL falls back to protocol://host:port when no getUrlHandler was provided', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'RawApp',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
         closeHandler: rawCloseHandler,
       });
-      await expect(aut.autURL()).rejects.toThrow(/no getUrlHandler/);
+      await expect(aut.resolveURL()).resolves.toBe(`http://localhost:${RAW_SERVER_PORT}`);
     });
 
     it('closes the real server cleanly', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'RawApp',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
@@ -731,7 +731,7 @@ describe('API_AUTWrapper', () => {
         getUrlHandler: rawGetUrlHandler,
       });
       await expect(aut.close()).resolves.not.toThrow();
-      expect(aut.isControlled).toBe(false);
+      expect(aut.isSelfManaged).toBe(false);
     });
   });
 
@@ -748,14 +748,14 @@ describe('API_AUTWrapper', () => {
     });
 
     it('two instances run simultaneously without interfering', async () => {
-      aut1 = await API_AUTWrapper.create({
+      aut1 = await API_AUTWrapper.startNewApplication({
         appName: 'App1',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
         closeHandler: rawCloseHandler,
         getUrlHandler: rawGetUrlHandler,
       });
-      aut2 = await API_AUTWrapper.create({
+      aut2 = await API_AUTWrapper.startNewApplication({
         appName: 'App2',
         port: RAW_SERVER_PORT_2,
         bootstrapper: makeRawBootstrapper(),
@@ -763,21 +763,21 @@ describe('API_AUTWrapper', () => {
         getUrlHandler: rawGetUrlHandler,
       });
 
-      expect(aut1.isControlled).toBe(true);
-      expect(aut2.isControlled).toBe(true);
+      expect(aut1.isSelfManaged).toBe(true);
+      expect(aut2.isSelfManaged).toBe(true);
       await expect(aut1.isLive()).resolves.toBe(true);
       await expect(aut2.isLive()).resolves.toBe(true);
     });
 
     it('closing one instance does not affect the other', async () => {
-      aut1 = await API_AUTWrapper.create({
+      aut1 = await API_AUTWrapper.startNewApplication({
         appName: 'App1',
         port: RAW_SERVER_PORT,
         bootstrapper: makeRawBootstrapper(),
         closeHandler: rawCloseHandler,
         getUrlHandler: rawGetUrlHandler,
       });
-      aut2 = await API_AUTWrapper.create({
+      aut2 = await API_AUTWrapper.startNewApplication({
         appName: 'App2',
         port: RAW_SERVER_PORT_2,
         bootstrapper: makeRawBootstrapper(),
@@ -787,8 +787,8 @@ describe('API_AUTWrapper', () => {
 
       await aut1.close();
 
-      expect(aut1.isControlled).toBe(false);
-      expect(aut2.isControlled).toBe(true);
+      expect(aut1.isSelfManaged).toBe(false);
+      expect(aut2.isSelfManaged).toBe(true);
       await expect(aut2.isLive()).resolves.toBe(true);
     });
 
@@ -840,7 +840,7 @@ describe('API_AUTWrapper', () => {
 
     /** Puts a settings block in place for Settings.get()'s profileParameterName resolution. */
     function setAutSettings(apps: Record<string, Record<string, unknown>>): void {
-      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTDetails: apps } });
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTs: apps } });
     }
 
     afterEach(async () => {
@@ -862,7 +862,7 @@ describe('API_AUTWrapper', () => {
         closeHandler: stubCloseHandler,
       });
 
-      expect(aut.isControlled).toBe(false);
+      expect(aut.isSelfManaged).toBe(false);
       expect(aut.appName).toBe('RegistryApp');
       expect(aut.port).toBe(DEFAULT_PORT);
       expect(bootstrapper).not.toHaveBeenCalled();
@@ -877,7 +877,7 @@ describe('API_AUTWrapper', () => {
 
       const aut = await API_AUTWrapper.startApplication('RegistryApp');
 
-      expect(aut.isControlled).toBe(true);
+      expect(aut.isSelfManaged).toBe(true);
       expect(aut.appName).toBe('RegistryApp');
     });
 
@@ -900,7 +900,7 @@ describe('API_AUTWrapper', () => {
       // Still registered (just stopped) — restarting by name alone must work, with no
       // fresh prepareApplication() call, proving stop/start really are each other's inverse.
       const restarted = await API_AUTWrapper.startApplication('RegistryApp');
-      expect(restarted.isControlled).toBe(true);
+      expect(restarted.isSelfManaged).toBe(true);
     });
 
     it('throws clearly when stopping a name that was never prepared', async () => {
@@ -919,7 +919,7 @@ describe('API_AUTWrapper', () => {
       const second = await API_AUTWrapper.startApplication('RegistryApp');
 
       expect(firstHandle.closeFn).toHaveBeenCalledTimes(1);
-      expect(second.isControlled).toBe(true);
+      expect(second.isSelfManaged).toBe(true);
     });
 
     it('rejects re-preparing an app that is currently running', async () => {
@@ -1011,46 +1011,46 @@ describe('API_AUTWrapper', () => {
       await expect(fetch(`http://localhost:${RAW_SERVER_PORT}`)).rejects.toThrow();
     });
 
-    it('assertRegistryIsEmpty passes when nothing is registered', async () => {
-      await API_AUTWrapper.closeAllRegistered(); // guarantee a clean slate regardless of test order
-      expect(() => API_AUTWrapper.assertRegistryIsEmpty()).not.toThrow();
+    it('assertNoAUTsOrAPIsStillRegistered passes when nothing is registered', async () => {
+      await API_AUTWrapper.closeAllAUTsAndAPIs(); // guarantee a clean slate regardless of test order
+      expect(() => API_AUTWrapper.assertNoAUTsOrAPIsStillRegistered()).not.toThrow();
     });
 
-    it('assertRegistryIsEmpty throws, listing every still-registered name, when the registry was never cleared', () => {
+    it('assertNoAUTsOrAPIsStillRegistered throws, listing every still-registered name, when the registry was never cleared', () => {
       setAutSettings({ RegistryApp: { port: DEFAULT_PORT } });
       API_AUTWrapper.prepareApplication('RegistryApp', { bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
 
-      expect(() => API_AUTWrapper.assertRegistryIsEmpty()).toThrow(/1 application\(s\) still registered[\s\S]*RegistryApp/);
+      expect(() => API_AUTWrapper.assertNoAUTsOrAPIsStillRegistered()).toThrow(/1 application\(s\) still registered[\s\S]*RegistryApp/);
     });
 
-    it('prepareApplication with no bootstrapper never remembers the endpoint — assertNoKnownAUTsStillListening stays silent for it even while it is genuinely, correctly reachable', async () => {
+    it('prepareApplication with no bootstrapper never remembers the endpoint — assertNoManagedAUTPortsOpen stays silent for it even while it is genuinely, correctly reachable', async () => {
       setAutSettings({ ExternalApp: { port: REGISTRY_CHECK_PORT } }); // host/protocol default to localhost/http — matching the real server below
       const server = await makeRawBootstrapper()(REGISTRY_CHECK_PORT); // a real listener, started independently of API_AUTWrapper — simulating an external, already-running target
       try {
         API_AUTWrapper.prepareApplication('ExternalApp', {}); // no bootstrapper at all — the external-target pattern
 
-        await expect(API_AUTWrapper.assertNoKnownAUTsStillListening()).resolves.not.toThrow();
+        await expect(API_AUTWrapper.assertNoManagedAUTPortsOpen()).resolves.not.toThrow();
       } finally {
         await rawCloseHandler(server);
       }
     });
 
-    it('prepareApplication WITH a bootstrapper still remembers the endpoint — assertNoKnownAUTsStillListening still catches a genuine leak', async () => {
+    it('prepareApplication WITH a bootstrapper still remembers the endpoint — assertNoManagedAUTPortsOpen still catches a genuine leak', async () => {
       setAutSettings({ RegistryApp: { port: REGISTRY_CHECK_PORT_2 } });
       const server = await makeRawBootstrapper()(REGISTRY_CHECK_PORT_2); // simulates the previous test's teardown having failed to actually free the port
       try {
         API_AUTWrapper.prepareApplication('RegistryApp', { bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
 
-        await expect(API_AUTWrapper.assertNoKnownAUTsStillListening()).rejects.toThrow(/still have something listening[\s\S]*RegistryApp/);
+        await expect(API_AUTWrapper.assertNoManagedAUTPortsOpen()).rejects.toThrow(/still have an open port[\s\S]*RegistryApp/);
       } finally {
         await rawCloseHandler(server);
       }
     });
   });
 
-  // ─── create() registration / getApplication() / closeAllRegistered() ──────────
+  // ─── startNewApplication() registration / getApplication() / closeAllAUTsAndAPIs() ──────────
 
-  describe('create() registration, getApplication(), closeAllRegistered()', () => {
+  describe('startNewApplication() registration, getApplication(), closeAllAUTsAndAPIs()', () => {
 
     afterEach(async () => {
       // Best-effort — most tests below close what they create themselves, but this
@@ -1066,8 +1066,8 @@ describe('API_AUTWrapper', () => {
       }
     });
 
-    it('create() registers the resulting instance, findable by name via getApplication()', async () => {
-      const aut = await API_AUTWrapper.create({
+    it('startNewApplication() registers the resulting instance, findable by name via getApplication()', async () => {
+      const aut = await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1077,8 +1077,8 @@ describe('API_AUTWrapper', () => {
       expect(API_AUTWrapper.getApplication('CreateRegApp')).toBe(aut);
     });
 
-    it('rejects calling create() again under the same name while the first is still running', async () => {
-      await API_AUTWrapper.create({
+    it('rejects calling startNewApplication() again under the same name while the first is still running', async () => {
+      await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1086,12 +1086,12 @@ describe('API_AUTWrapper', () => {
       });
 
       await expect(
-        API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler })
+        API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler })
       ).rejects.toThrow(/\[CreateRegApp\] is already running/);
     });
 
-    it('allows calling create() again under the same name once the first has been closed', async () => {
-      const first = await API_AUTWrapper.create({
+    it('allows calling startNewApplication() again under the same name once the first has been closed', async () => {
+      const first = await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1099,7 +1099,7 @@ describe('API_AUTWrapper', () => {
       });
       await first.close();
 
-      const second = await API_AUTWrapper.create({
+      const second = await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1110,15 +1110,15 @@ describe('API_AUTWrapper', () => {
     });
 
     it('getApplication() with no name resolves to the single registered AUT', async () => {
-      const aut = await API_AUTWrapper.create({
+      const aut = await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
         closeHandler: stubCloseHandler,
       });
-      await API_AUTWrapper.closeAllRegistered(); // clear any accumulated history from earlier tests
+      await API_AUTWrapper.closeAllAUTsAndAPIs(); // clear any accumulated history from earlier tests
 
-      const recreated = await API_AUTWrapper.create({
+      const recreated = await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1130,26 +1130,26 @@ describe('API_AUTWrapper', () => {
     });
 
     it('getApplication() with no name throws when zero AUTs are registered', async () => {
-      await API_AUTWrapper.closeAllRegistered();
-      expect(() => API_AUTWrapper.getApplication()).toThrow(/no AUT is currently registered/);
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
+      expect(() => API_AUTWrapper.getApplication()).toThrow(/no AUT's registered/);
     });
 
     it('getApplication() with no name throws — ambiguous — when more than one AUT is registered', async () => {
-      await API_AUTWrapper.closeAllRegistered();
-      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      await API_AUTWrapper.create({ appName: 'CreateRegApp2', port: DEFAULT_PORT + 1, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp2', port: DEFAULT_PORT + 1, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
 
-      expect(() => API_AUTWrapper.getApplication()).toThrow(/2 AUTs are currently registered \(\[CreateRegApp, CreateRegApp2\]\)/);
+      expect(() => API_AUTWrapper.getApplication()).toThrow(/2 AUTs registered \(\[CreateRegApp, CreateRegApp2\]\)/);
     });
 
     it('getApplication(name) throws clearly when nothing is registered under that name', () => {
       expect(() => API_AUTWrapper.getApplication('NeverRegistered')).toThrow(/\[NeverRegistered\] is not registered/);
     });
 
-    it('closeAllRegistered() closes every registered AUT, from both create() and prepareApplication()', async () => {
-      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTDetails: { CreateRegApp2: { port: DEFAULT_PORT + 1 } } } });
+    it('closeAllAUTsAndAPIs() closes every registered AUT, from both startNewApplication() and prepareApplication()', async () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTs: { CreateRegApp2: { port: DEFAULT_PORT + 1 } } } });
       const createdHandle = makeStubHandle();
-      await API_AUTWrapper.create({
+      await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle: createdHandle }),
@@ -1163,7 +1163,7 @@ describe('API_AUTWrapper', () => {
       await API_AUTWrapper.startApplication('CreateRegApp2');
       Settings.clearContext();
 
-      await API_AUTWrapper.closeAllRegistered();
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
 
       expect(createdHandle.closeFn).toHaveBeenCalledTimes(1);
       expect(preparedHandle.closeFn).toHaveBeenCalledTimes(1);
@@ -1171,9 +1171,9 @@ describe('API_AUTWrapper', () => {
       expect(() => API_AUTWrapper.getApplication('CreateRegApp2')).toThrow(/is not registered/);
     });
 
-    it('closeAllRegistered() clears the registry even when a close() call throws, and reports every failure', async () => {
-      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTDetails: { CreateRegApp2: { port: DEFAULT_PORT + 1 } } } });
-      await API_AUTWrapper.create({
+    it('closeAllAUTsAndAPIs() clears the registry even when a close() call throws, and reports every failure', async () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAUTs: { CreateRegApp2: { port: DEFAULT_PORT + 1 } } } });
+      await API_AUTWrapper.startNewApplication({
         appName: 'CreateRegApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle: makeStubHandle({ closeShouldFail: true }) }),
@@ -1186,192 +1186,192 @@ describe('API_AUTWrapper', () => {
       await API_AUTWrapper.startApplication('CreateRegApp2');
       Settings.clearContext();
 
-      await expect(API_AUTWrapper.closeAllRegistered()).rejects.toThrow(/failed to close 2 AUT\(s\)/);
+      await expect(API_AUTWrapper.closeAllAUTsAndAPIs()).rejects.toThrow(/failed to close 2 AUT\(s\)/);
       // Registry is still cleared despite the failures — next test (or scenario) starts clean.
       expect(() => API_AUTWrapper.getApplication('CreateRegApp')).toThrow(/is not registered/);
       expect(() => API_AUTWrapper.getApplication('CreateRegApp2')).toThrow(/is not registered/);
     });
   });
 
-  // ─── Endpoint — createEndpoint()/prepareEndpoint(), cross-registry rules ──────
+  // ─── API — registerAPI()/prepareAPI(), cross-registry rules ─────────────────
 
-  describe('Endpoint — createEndpoint()/prepareEndpoint(), cross-registry rules', () => {
+  describe('API — registerAPI()/prepareAPI(), cross-registry rules', () => {
 
-    const ENDPOINT_PORT   = 16000;
-    const ENDPOINT_PORT_2 = 16001;
+    const API_PORT   = 16000;
+    const API_PORT_2 = 16001;
 
     afterEach(async () => {
-      await API_AUTWrapper.closeAllRegistered();
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
     });
 
-    it('createEndpoint() registers the resulting instance, findable via resolveTarget()', () => {
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
-      expect(API_AUTWrapper.resolveTarget('[EndpointA]')).toBe(endpoint);
+    it('registerAPI() registers the resulting instance, findable via findAUTOrAPIByTargetText()', () => {
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('[APIOne]')).toBe(api);
     });
 
-    it('createEndpoint() never bootstraps — isControlled stays false, kind is "endpoint"', () => {
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
-      expect(endpoint.isControlled).toBe(false);
-      expect(endpoint.kind).toBe('endpoint');
+    it('registerAPI() never bootstraps — isSelfManaged stays false, kind is "api"', () => {
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
+      expect(api.isSelfManaged).toBe(false);
+      expect(api.targetKind).toBe('api');
     });
 
-    it('createEndpoint() throws if details is null', () => {
-      expect(() => API_AUTWrapper.createEndpoint(null)).toThrow();
+    it('registerAPI() throws if details is null', () => {
+      expect(() => API_AUTWrapper.registerAPI(null)).toThrow();
     });
 
-    it('createEndpoint() throws if appName is omitted/empty', () => {
-      expect(() => API_AUTWrapper.createEndpoint({ appName: '', port: ENDPOINT_PORT })).toThrow();
+    it('registerAPI() throws if appName is omitted/empty', () => {
+      expect(() => API_AUTWrapper.registerAPI({ appName: '', port: API_PORT })).toThrow();
     });
 
-    it('createEndpoint() throws if port is missing', () => {
-      expect(() => API_AUTWrapper.createEndpoint({ appName: 'EndpointA' } as API_AUTWrapper.EndpointCreateDetails)).toThrow();
+    it('registerAPI() throws if port is missing', () => {
+      expect(() => API_AUTWrapper.registerAPI({ appName: 'APIOne' } as API_AUTWrapper.NewAPIDetails)).toThrow();
     });
 
-    it("resolveTarget('EndPoint') resolves to the single registered Endpoint", () => {
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
-      expect(API_AUTWrapper.resolveTarget('EndPoint')).toBe(endpoint);
+    it("findAUTOrAPIByTargetText('API') resolves to the single registered API", () => {
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('API')).toBe(api);
     });
 
-    it("resolveTarget('EndPoint') throws when zero Endpoints are registered", () => {
-      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/no Endpoint is currently registered/);
+    it("findAUTOrAPIByTargetText('API') throws when zero APIs are registered", () => {
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('API')).toThrow(/no API's registered/);
     });
 
-    it("resolveTarget('EndPoint') throws — ambiguous — when more than one Endpoint is registered", () => {
-      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
-      API_AUTWrapper.createEndpoint({ appName: 'EndpointB', port: ENDPOINT_PORT_2 });
-      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/2 Endpoints are currently registered \(\[EndpointA, EndpointB\]\)/);
+    it("findAUTOrAPIByTargetText('API') throws — ambiguous — when more than one API is registered", () => {
+      API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
+      API_AUTWrapper.registerAPI({ appName: 'APITwo', port: API_PORT_2 });
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('API')).toThrow(/2 APIs registered \(\[APIOne, APITwo\]\)/);
     });
 
-    it('resolveTarget([name]) throws clearly when nothing is registered under that name', () => {
-      expect(() => API_AUTWrapper.resolveTarget('[NeverRegistered]')).toThrow(/is registered as neither an AUT nor an Endpoint/);
+    it('findAUTOrAPIByTargetText([name]) throws clearly when nothing is registered under that name', () => {
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('[NeverRegistered]')).toThrow(/is registered as neither an AUT nor an API/);
     });
 
-    it('createEndpoint() throws if appName is already registered as an AUT (cross-registry)', async () => {
-      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      expect(() => API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT })).toThrow(/\[CreateRegApp\] is already registered as an Endpoint|\[CreateRegApp\] is already registered as an AUT/);
+    it('registerAPI() throws if appName is already registered as an AUT (cross-registry)', async () => {
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(() => API_AUTWrapper.registerAPI({ appName: 'CreateRegApp', port: API_PORT })).toThrow(/\[CreateRegApp\] is already registered as an API|\[CreateRegApp\] is already registered as an AUT/);
     });
 
-    it("create() throws if appName is already registered as an Endpoint (cross-registry) — even though create()'s own same-registry rule alone would allow it", async () => {
-      API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT });
+    it("startNewApplication() throws if appName is already registered as an API (cross-registry) — even though startNewApplication()'s own same-registry rule alone would allow it", async () => {
+      API_AUTWrapper.registerAPI({ appName: 'CreateRegApp', port: API_PORT });
       await expect(
-        API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler })
-      ).rejects.toThrow(/\[CreateRegApp\] is already registered as an Endpoint/);
+        API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler })
+      ).rejects.toThrow(/\[CreateRegApp\] is already registered as an API/);
     });
 
-    it('prepareEndpoint() throws if appName is already registered as an AUT (cross-registry)', async () => {
-      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      expect(() => API_AUTWrapper.prepareEndpoint('CreateRegApp')).toThrow(/\[CreateRegApp\] is already registered as an AUT/);
+    it('prepareAPI() throws if appName is already registered as an AUT (cross-registry)', async () => {
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(() => API_AUTWrapper.prepareAPI('CreateRegApp')).toThrow(/\[CreateRegApp\] is already registered as an AUT/);
     });
 
-    it('prepareApplication() throws if appName is already registered as an Endpoint (cross-registry)', () => {
-      API_AUTWrapper.createEndpoint({ appName: 'CreateRegApp', port: ENDPOINT_PORT });
-      expect(() => API_AUTWrapper.prepareApplication('CreateRegApp', {})).toThrow(/\[CreateRegApp\] is already registered as an Endpoint/);
+    it('prepareApplication() throws if appName is already registered as an API (cross-registry)', () => {
+      API_AUTWrapper.registerAPI({ appName: 'CreateRegApp', port: API_PORT });
+      expect(() => API_AUTWrapper.prepareApplication('CreateRegApp', {})).toThrow(/\[CreateRegApp\] is already registered as an API/);
     });
 
-    it('prepareEndpoint() resolves config from endpointDetails settings and registers it', () => {
-      Settings.setContext({ sourceName: 'TestProfile', parameters: { endpointDetails: { EndpointA: { port: ENDPOINT_PORT, host: 'example.test' } } } });
+    it('prepareAPI() resolves config from testAPIs settings and registers it', () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAPIs: { APIOne: { port: API_PORT, host: 'example.test' } } } });
       try {
-        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointA');
-        expect(endpoint.port).toBe(ENDPOINT_PORT);
-        expect(endpoint.host).toBe('example.test');
-        expect(endpoint.kind).toBe('endpoint');
+        const api = API_AUTWrapper.prepareAPI('APIOne');
+        expect(api.port).toBe(API_PORT);
+        expect(api.host).toBe('example.test');
+        expect(api.targetKind).toBe('api');
       } finally {
         Settings.clearContext();
       }
     });
 
-    it('prepareEndpoint() throws clearly when no port is configured for it', () => {
-      Settings.setContext({ sourceName: 'TestProfile', parameters: { endpointDetails: { EndpointA: {} } } });
+    it('prepareAPI() throws clearly when no port is configured for it', () => {
+      Settings.setContext({ sourceName: 'TestProfile', parameters: { testAPIs: { APIOne: {} } } });
       try {
-        expect(() => API_AUTWrapper.prepareEndpoint('EndpointA')).toThrow(/\[EndpointA\] no 'port' available/);
+        expect(() => API_AUTWrapper.prepareAPI('APIOne')).toThrow(/\[APIOne\] no 'port' available/);
       } finally {
         Settings.clearContext();
       }
     });
 
-    it('closeAllRegistered() clears both the AUT and Endpoint registries', async () => {
-      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+    it('closeAllAUTsAndAPIs() clears both the AUT and API registries', async () => {
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
 
-      await API_AUTWrapper.closeAllRegistered();
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
 
       expect(() => API_AUTWrapper.getApplication('CreateRegApp')).toThrow(/is not registered/);
-      expect(() => API_AUTWrapper.resolveTarget('[EndpointA]')).toThrow(/is registered as neither/);
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('[APIOne]')).toThrow(/is registered as neither/);
     });
 
-    it('assertRegistryIsEmpty() also reports stale Endpoint registrations, without breaking the existing AUT-only message shape', async () => {
-      await API_AUTWrapper.create({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+    it('assertNoAUTsOrAPIsStillRegistered() also reports stale API registrations, without breaking the existing AUT-only message shape', async () => {
+      await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: DEFAULT_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
 
-      expect(() => API_AUTWrapper.assertRegistryIsEmpty()).toThrow(/1 application\(s\) still registered[\s\S]*CreateRegApp[\s\S]*plus 1 Endpoint\(s\)[\s\S]*EndpointA/);
+      expect(() => API_AUTWrapper.assertNoAUTsOrAPIsStillRegistered()).toThrow(/1 application\(s\) still registered[\s\S]*CreateRegApp[\s\S]*plus 1 API\(s\)[\s\S]*APIOne/);
     });
 
-    it('Endpoints are never remembered for leak-detection — assertNoKnownAUTsStillListening stays silent for a live, correctly-reachable Endpoint', async () => {
+    it('APIs are never remembered for leak-detection — assertNoManagedAUTPortsOpen stays silent for a live, correctly-reachable API', async () => {
       // A real listener, started independently of API_AUTWrapper — simulating a genuinely
-      // external Endpoint. If createEndpoint() ever called _rememberEndpoint(), this would
+      // external API. If registerAPI() ever called _rememberEndpoint(), this would
       // incorrectly show up as "still listening" at the start of whatever test runs next.
-      const server = await makeRawBootstrapper()(ENDPOINT_PORT);
+      const server = await makeRawBootstrapper()(API_PORT);
       try {
-        API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
-        await expect(API_AUTWrapper.assertNoKnownAUTsStillListening()).resolves.not.toThrow();
+        API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
+        await expect(API_AUTWrapper.assertNoManagedAUTPortsOpen()).resolves.not.toThrow();
       } finally {
         await rawCloseHandler(server);
       }
     });
 
-    it('request()/.transactions/.lastResponse/.setHeaders() all work on an Endpoint exactly as on an AUT', async () => {
+    it('request()/.transactions/.lastResponse/.setHeaders() all work on an API exactly as on an AUT', async () => {
       mockPerform.mockResolvedValue(makeResponse());
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: ENDPOINT_PORT });
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: API_PORT });
 
-      endpoint.setHeaders({ Authorization: 'Bearer xyz' });
-      await endpoint.request('GET', '/ping');
+      api.setHeaders({ Authorization: 'Bearer xyz' });
+      await api.request('GET', '/ping');
 
-      expect(endpoint.lastResponse.status).toBe(200);
-      expect(endpoint.transactions).toHaveLength(1);
-      expect(endpoint.transactions[0].target).toEqual({ kind: 'endpoint', name: 'EndpointA' });
+      expect(api.lastResponse.status).toBe(200);
+      expect(api.transactions).toHaveLength(1);
+      expect(api.transactions[0].target).toEqual({ kind: 'api', name: 'APIOne' });
     });
   });
 
-  // ─── resolveTarget() ────────────────────────────────────────────────────────
+  // ─── findAUTOrAPIByTargetText() ────────────────────────────────────────────────────────
 
-  describe('resolveTarget()', () => {
+  describe('findAUTOrAPIByTargetText()', () => {
 
     const RESOLVE_PORT = 16100;
 
     afterEach(async () => {
-      await API_AUTWrapper.closeAllRegistered();
+      await API_AUTWrapper.closeAllAUTsAndAPIs();
     });
 
     it("resolves 'AUT' to the single registered AUT via getApplication()", async () => {
-      const aut = await API_AUTWrapper.create({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      expect(API_AUTWrapper.resolveTarget('AUT')).toBe(aut);
+      const aut = await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('AUT')).toBe(aut);
     });
 
-    it("resolves 'EndPoint' to the single registered Endpoint", () => {
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: RESOLVE_PORT });
-      expect(API_AUTWrapper.resolveTarget('EndPoint')).toBe(endpoint);
+    it("resolves 'API' to the single registered API", () => {
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: RESOLVE_PORT });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('API')).toBe(api);
     });
 
     it("resolves '[name]' to an AUT registered under that name", async () => {
-      const aut = await API_AUTWrapper.create({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
-      expect(API_AUTWrapper.resolveTarget('[CreateRegApp]')).toBe(aut);
+      const aut = await API_AUTWrapper.startNewApplication({ appName: 'CreateRegApp', port: RESOLVE_PORT, bootstrapper: makeStubBootstrapper(), closeHandler: stubCloseHandler });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('[CreateRegApp]')).toBe(aut);
     });
 
-    it("resolves '[name]' to an Endpoint registered under that name when no AUT exists under it", () => {
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'EndpointA', port: RESOLVE_PORT });
-      expect(API_AUTWrapper.resolveTarget('[EndpointA]')).toBe(endpoint);
+    it("resolves '[name]' to an API registered under that name when no AUT exists under it", () => {
+      const api = API_AUTWrapper.registerAPI({ appName: 'APIOne', port: RESOLVE_PORT });
+      expect(API_AUTWrapper.findAUTOrAPIByTargetText('[APIOne]')).toBe(api);
     });
 
     it("throws a clear combined error when '[name]' is registered as neither", () => {
-      expect(() => API_AUTWrapper.resolveTarget('[NeverRegistered]')).toThrow(/\[NeverRegistered\] is registered as neither an AUT nor an Endpoint/);
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('[NeverRegistered]')).toThrow(/\[NeverRegistered\] is registered as neither an AUT nor an API/);
     });
 
     it("propagates getApplication()'s own zero/ambiguous error for the bare 'AUT' case", () => {
-      expect(() => API_AUTWrapper.resolveTarget('AUT')).toThrow(/no AUT is currently registered/);
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('AUT')).toThrow(/no AUT's registered/);
     });
 
-    it("propagates the equivalent zero/ambiguous error for the bare 'EndPoint' case", () => {
-      expect(() => API_AUTWrapper.resolveTarget('EndPoint')).toThrow(/no Endpoint is currently registered/);
+    it("propagates the equivalent zero/ambiguous error for the bare 'API' case", () => {
+      expect(() => API_AUTWrapper.findAUTOrAPIByTargetText('API')).toThrow(/no API's registered/);
     });
   });
 
@@ -1404,7 +1404,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('resolves and applies every settings-driven field', () => {
-      setAutSettings('testAUTDetails', {
+      setAutSettings('testAUTs', {
         SettingsApp: {
           port: SETTINGS_PORT,
           host: 'localhost',
@@ -1429,7 +1429,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('coerces string port/requestTimeout/autHandlerTimeout values (as an env var would produce) to numbers', () => {
-      setAutSettings('testAUTDetails', {
+      setAutSettings('testAUTs', {
         SettingsApp: { port: String(SETTINGS_PORT), requestTimeout: '7000', autHandlerTimeout: '6000' },
       });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
@@ -1442,13 +1442,13 @@ describe('API_AUTWrapper', () => {
     });
 
     it('rejects a port that resolves to something non-numeric', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: 'not-a-port' } });
+      setAutSettings('testAUTs', { SettingsApp: { port: 'not-a-port' } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
       expect(() => aut.loadSettings()).toThrow(/\[port\] not a valid 'port'/);
     });
 
     it('leaves unconfigured optional fields at their current/default value', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT } });
+      setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
       aut.loadSettings();
@@ -1459,14 +1459,14 @@ describe('API_AUTWrapper', () => {
     });
 
     it('resolves every settings-driven field with notFoundIsExpected — leaving unconfigured fields unset is never treated as an error by Utils.getSetting', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT } });
+      setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
       const getSettingSpy = vi.spyOn(Settings, 'get');
 
       aut.loadSettings();
 
       // Only the per-field calls _resolveAndLogSetting makes (profileParameterName under
-      // this app's own testAUTDetails base) — excludes the unrelated settings-prefix
+      // this app's own testAUTs base) — excludes the unrelated settings-prefix
       // resolution (CONTROLIUM_AUT_SETTINGS_PREFIX), which has no profileParameterName at all.
       const perFieldCalls = getSettingSpy.mock.calls
         .map(([, , sources]) => sources as { profileParameterName?: string; notFoundIsExpected?: boolean })
@@ -1480,7 +1480,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('logs one explicit summary — spread over multiple lines, one field per line — with the effective configuration', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
+      setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
       aut.loadSettings();
@@ -1495,7 +1495,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('the per-field trail (resolved and not-configured alike) always logs at TestDebug, regardless of logLevel — quieter than the headline summary, not tunable per-call', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
+      setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
       aut.loadSettings(LogLevels.Error); // even an unrelated logLevel override doesn't move these
@@ -1508,7 +1508,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('a caller-supplied logLevel only moves the headline summary line, not the per-field trail', () => {
-      setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
+      setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT, protocol: 'https' } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
       aut.loadSettings(LogLevels.FrameworkDebug);
@@ -1518,7 +1518,7 @@ describe('API_AUTWrapper', () => {
       expect(summaryLine?.[0]).toBe(LogLevels.FrameworkDebug);
     });
 
-    it('uses a configurable settings prefix via env var instead of the testAUTDetails default', () => {
+    it('uses a configurable settings prefix via env var instead of the testAUTs default', () => {
       process.env.CONTROLIUM_AUT_SETTINGS_PREFIX = 'myCustomPrefix';
       setAutSettings('myCustomPrefix', { SettingsApp: { port: SETTINGS_PORT_2 } });
       const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
@@ -1537,8 +1537,8 @@ describe('API_AUTWrapper', () => {
       });
 
       it('re-resolving the same value while running is a harmless no-op', async () => {
-        setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT } });
-        aut = await API_AUTWrapper.create({
+        setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT } });
+        aut = await API_AUTWrapper.startNewApplication({
           appName: 'SettingsApp',
           port: SETTINGS_PORT,
           bootstrapper: makeStubBootstrapper(),
@@ -1550,25 +1550,25 @@ describe('API_AUTWrapper', () => {
       });
 
       it('throws if the resolved port genuinely differs while running', async () => {
-        aut = await API_AUTWrapper.create({
+        aut = await API_AUTWrapper.startNewApplication({
           appName: 'SettingsApp',
           port: SETTINGS_PORT,
           bootstrapper: makeStubBootstrapper(),
           closeHandler: stubCloseHandler,
         });
-        setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT_2 } });
+        setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT_2 } });
 
         expect(() => aut.loadSettings()).toThrow(/cannot change 'port' while running/);
       });
 
       it('still freely reloads requestTimeout/proxy/autHandlerTimeout/resourcePathPreamble while running', async () => {
-        aut = await API_AUTWrapper.create({
+        aut = await API_AUTWrapper.startNewApplication({
           appName: 'SettingsApp',
           port: SETTINGS_PORT,
           bootstrapper: makeStubBootstrapper(),
           closeHandler: stubCloseHandler,
         });
-        setAutSettings('testAUTDetails', {
+        setAutSettings('testAUTs', {
           SettingsApp: { port: SETTINGS_PORT, requestTimeout: 1234, proxy: 'http://newproxy:9090', resourcePathPreamble: '/v9' },
         });
 
@@ -1596,7 +1596,7 @@ describe('API_AUTWrapper', () => {
 
       it('loads a configured .env file into process.env', () => {
         writeFileSync(envFile, 'DOTENV_TEST_VAR=hello-from-dotenv\n');
-        setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT, dotEnvPath: envFile } });
+        setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT, dotEnvPath: envFile } });
         const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
         aut.loadSettings();
@@ -1607,7 +1607,7 @@ describe('API_AUTWrapper', () => {
       it('overrides an already-set process.env value (override: true)', () => {
         process.env.DOTENV_TEST_VAR = 'pre-existing';
         writeFileSync(envFile, 'DOTENV_TEST_VAR=overridden\n');
-        setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT, dotEnvPath: envFile } });
+        setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT, dotEnvPath: envFile } });
         const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
         aut.loadSettings();
@@ -1616,7 +1616,7 @@ describe('API_AUTWrapper', () => {
       });
 
       it('throws if the configured dotEnvPath does not exist', () => {
-        setAutSettings('testAUTDetails', {
+        setAutSettings('testAUTs', {
           SettingsApp: { port: SETTINGS_PORT, dotEnvPath: path.join(tmpDir, 'does-not-exist.env') },
         });
         const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
@@ -1625,55 +1625,55 @@ describe('API_AUTWrapper', () => {
       });
 
       it('does nothing dotenv-related if dotEnvPath is not configured', () => {
-        setAutSettings('testAUTDetails', { SettingsApp: { port: SETTINGS_PORT } });
+        setAutSettings('testAUTs', { SettingsApp: { port: SETTINGS_PORT } });
         const aut = new API_AUTWrapper({ appName: 'SettingsApp' });
 
         expect(() => aut.loadSettings()).not.toThrow();
       });
     });
 
-    describe('loadSettings() — Endpoint kind', () => {
+    describe('loadSettings() — API kind', () => {
 
       afterEach(async () => {
-        delete process.env.CONTROLIUM_ENDPOINT_SETTINGS_PREFIX;
-        await API_AUTWrapper.closeAllRegistered();
+        delete process.env.CONTROLIUM_API_SETTINGS_PREFIX;
+        await API_AUTWrapper.closeAllAUTsAndAPIs();
       });
 
-      it('resolves from the endpointDetails prefix by default, not testAUTDetails', () => {
-        setAutSettings('endpointDetails', { EndpointSettingsApp: { port: SETTINGS_PORT } });
+      it('resolves from the testAPIs prefix by default, not testAUTs', () => {
+        setAutSettings('testAPIs', { APISettingsApp: { port: SETTINGS_PORT } });
 
-        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+        const api = API_AUTWrapper.prepareAPI('APISettingsApp');
 
-        expect(endpoint.port).toBe(SETTINGS_PORT);
+        expect(api.port).toBe(SETTINGS_PORT);
       });
 
-      it('uses a configurable Endpoint settings prefix via CONTROLIUM_ENDPOINT_SETTINGS_PREFIX / endpointSettingsPrefix', () => {
-        process.env.CONTROLIUM_ENDPOINT_SETTINGS_PREFIX = 'customEndpointPrefix';
-        setAutSettings('customEndpointPrefix', { EndpointSettingsApp: { port: SETTINGS_PORT_2 } });
+      it('uses a configurable API settings prefix via CONTROLIUM_API_SETTINGS_PREFIX / apiSettingsPrefix', () => {
+        process.env.CONTROLIUM_API_SETTINGS_PREFIX = 'customAPIPrefix';
+        setAutSettings('customAPIPrefix', { APISettingsApp: { port: SETTINGS_PORT_2 } });
 
-        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+        const api = API_AUTWrapper.prepareAPI('APISettingsApp');
 
-        expect(endpoint.port).toBe(SETTINGS_PORT_2);
+        expect(api.port).toBe(SETTINGS_PORT_2);
       });
 
-      it('never resolves or applies autHandlerTimeout for an Endpoint — stays at its constructor default of 30_000', () => {
-        setAutSettings('endpointDetails', { EndpointSettingsApp: { port: SETTINGS_PORT, autHandlerTimeout: 9999 } });
+      it('never resolves or applies autHandlerTimeout for an API — stays at its constructor default of 30_000', () => {
+        setAutSettings('testAPIs', { APISettingsApp: { port: SETTINGS_PORT, autHandlerTimeout: 9999 } });
 
-        const endpoint = API_AUTWrapper.prepareEndpoint('EndpointSettingsApp');
+        const api = API_AUTWrapper.prepareAPI('APISettingsApp');
 
-        expect(endpoint.autHandlerTimeout).toBe(30_000);
+        expect(api.autHandlerTimeout).toBe(30_000);
       });
 
       it('still requires a port, from settings or already set, exactly like an AUT', () => {
-        setAutSettings('endpointDetails', { EndpointSettingsApp: {} });
-        expect(() => API_AUTWrapper.prepareEndpoint('EndpointSettingsApp')).toThrow(/\[EndpointSettingsApp\] no 'port' available/);
+        setAutSettings('testAPIs', { APISettingsApp: {} });
+        expect(() => API_AUTWrapper.prepareAPI('APISettingsApp')).toThrow(/\[APISettingsApp\] no 'port' available/);
       });
     });
   });
 
-  // ─── isLive / autURL edge cases ────────────────────────────────────────────
+  // ─── isLive / resolveURL edge cases ────────────────────────────────────────────
 
-  describe('isLive / autURL', () => {
+  describe('isLive / resolveURL', () => {
 
     let aut: API_AUTWrapper<StubHandle>;
 
@@ -1687,7 +1687,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('isLive returns false when getUrlHandler returns empty string', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle: makeStubHandle({ getUrlResult: '' }) }),
@@ -1698,7 +1698,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('isLive returns false when getUrlHandler throws', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle: makeStubHandle({ getUrlShouldFail: true }) }),
@@ -1708,37 +1708,37 @@ describe('API_AUTWrapper', () => {
       await expect(aut.isLive()).resolves.toBe(false);
     });
 
-    it('autURL throws when AUT has not been started', async () => {
+    it('resolveURL throws when there is no getUrlHandler and no port to fall back to', async () => {
       aut = new API_AUTWrapper();
-      await expect(aut.autURL()).rejects.toThrow(/is not running/);
+      await expect(aut.resolveURL()).rejects.toThrow(/port is not set/);
     });
 
-    it('autURL propagates getUrlHandler errors', async () => {
-      aut = await API_AUTWrapper.create({
+    it('resolveURL propagates getUrlHandler errors', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle: makeStubHandle({ getUrlShouldFail: true }) }),
         closeHandler: stubCloseHandler,
         getUrlHandler: stubGetUrlHandler,
       });
-      await expect(aut.autURL()).rejects.toThrow(/getUrlHandler threw/);
+      await expect(aut.resolveURL()).rejects.toThrow(/getUrlHandler threw/);
     });
 
-    it('autURL propagates a non-Error getUrlHandler failure without masking it', async () => {
-      aut = await API_AUTWrapper.create({
+    it('resolveURL propagates a non-Error getUrlHandler failure without masking it', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
         closeHandler: stubCloseHandler,
         getUrlHandler: () => Promise.reject(undefined),
       });
-      await expect(aut.autURL()).rejects.toBeDefined();
+      await expect(aut.resolveURL()).rejects.toBeDefined();
     });
 
     it('getUrlHandler receives the exact handle the bootstrapper returned', async () => {
       const handle = makeStubHandle();
       const receivedHandles: StubHandle[] = [];
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper({ handle }),
@@ -1748,7 +1748,7 @@ describe('API_AUTWrapper', () => {
       // _startAUT's own post-start diagnostic also calls getUrlHandler once, internally —
       // clear that out so this test is isolated to the explicit call below.
       receivedHandles.length = 0;
-      await aut.autURL();
+      await aut.resolveURL();
       expect(receivedHandles).toEqual([handle]);
     });
   });
@@ -1760,8 +1760,8 @@ describe('API_AUTWrapper', () => {
       await aut?.close();
     });
 
-    it('logs the resolved URL, isControlled, and current headers at TestDebug', async () => {
-      aut = await API_AUTWrapper.create({
+    it('logs the resolved URL, isSelfManaged, and current headers at TestDebug', async () => {
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1774,13 +1774,13 @@ describe('API_AUTWrapper', () => {
 
       expect(Log.writeLine).toHaveBeenCalledWith(
         LogLevels.TestDebug,
-        expect.stringMatching(/live state:[\s\S]*url: http:\/\/localhost:\d+[\s\S]*isControlled: true[\s\S]*headers:.*Authorization/),
+        expect.stringMatching(/live state:[\s\S]*url: http:\/\/localhost:\d+[\s\S]*isSelfManaged: true[\s\S]*headers:.*Authorization/),
         { suppressMultilinePreamble: true }
       );
     });
 
     it('falls back to "<unavailable: ...>" for the URL when no getUrlHandler was provided, rather than failing startup', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1795,7 +1795,7 @@ describe('API_AUTWrapper', () => {
     });
 
     it('reports headers as "<none>" when none have been set', async () => {
-      aut = await API_AUTWrapper.create({
+      aut = await API_AUTWrapper.startNewApplication({
         appName: 'TestApp',
         port: DEFAULT_PORT,
         bootstrapper: makeStubBootstrapper(),
@@ -1866,18 +1866,6 @@ describe('API_AUTWrapper', () => {
         expect(aut.getHeaders()['x-trace']).toBeNull();
       });
 
-      it('a token that resolves to the _undefined sentinel is recognised — detokenisation happens before sentinel resolution', async () => {
-        process.env.API_AUTWRAPPER_SPEC_HEADER_SENTINEL_TEST = '_undefined';
-        try {
-          await aut.setHeaders({
-            'X-Beta': '[[setting|processEnvName: "API_AUTWRAPPER_SPEC_HEADER_SENTINEL_TEST"]]',
-            'x-kept': 'abc',
-          });
-          expect(aut.getHeaders()).toEqual({ 'x-kept': 'abc' });
-        } finally {
-          delete process.env.API_AUTWRAPPER_SPEC_HEADER_SENTINEL_TEST;
-        }
-      });
     });
 
     it('clearHeaders empties the header set', async () => {
@@ -1942,14 +1930,14 @@ describe('API_AUTWrapper', () => {
       expect(aut.lastTransaction.target).toEqual({ kind: 'aut', name: 'AUT' });
     });
 
-    it('a transaction recorded against an Endpoint carries target: { kind: "endpoint", name }', async () => {
+    it('a transaction recorded against an API carries target: { kind: "api", name }', async () => {
       mockPerform.mockResolvedValue(makeResponse());
-      const endpoint = API_AUTWrapper.createEndpoint({ appName: 'TransactionEndpoint', port: DEFAULT_PORT });
+      const api = API_AUTWrapper.registerAPI({ appName: 'TransactionAPI', port: DEFAULT_PORT });
       try {
-        await endpoint.request('GET', '/test');
-        expect(endpoint.lastTransaction.target).toEqual({ kind: 'endpoint', name: 'TransactionEndpoint' });
+        await api.request('GET', '/test');
+        expect(api.lastTransaction.target).toEqual({ kind: 'api', name: 'TransactionAPI' });
       } finally {
-        await API_AUTWrapper.closeAllRegistered();
+        await API_AUTWrapper.closeAllAUTsAndAPIs();
       }
     });
 
@@ -2150,20 +2138,13 @@ describe('API_AUTWrapper', () => {
         expect(req.headers['x-override']).toBe('from-per-call-options');
       });
 
-      it('resolves sentinels on the override, including a token that resolves to one', async () => {
-        process.env.API_AUTWRAPPER_SPEC_NEXT_REQ_SENTINEL = '_undefined';
-        try {
-          await aut.setHeaders({ Authorization: 'Bearer session-token' });
-          API_AUTWrapper.mergeNextRequestHeaders({
-            Authorization: '[[setting|processEnvName: "API_AUTWRAPPER_SPEC_NEXT_REQ_SENTINEL"]]',
-          });
+      it('resolves sentinels on the override', async () => {
+        await aut.setHeaders({ Authorization: 'Bearer session-token', 'x-kept': 'abc' });
+        API_AUTWrapper.mergeNextRequestHeaders({ Authorization: '_undefined' });
 
-          await aut.request('GET', '/');
-          const [req] = mockPerform.mock.calls[0];
-          expect(req.headers).toEqual({});
-        } finally {
-          delete process.env.API_AUTWRAPPER_SPEC_NEXT_REQ_SENTINEL;
-        }
+        await aut.request('GET', '/');
+        const [req] = mockPerform.mock.calls[0];
+        expect(req.headers).toEqual({ 'x-kept': 'abc' });
       });
 
       it('clearNextRequestHeaders discards a staged override before it is ever used', async () => {
@@ -2258,11 +2239,11 @@ describe('API_AUTWrapper', () => {
         expect(req.queryString).toBe('b=2');
       });
 
-      it('detokenises session query params', async () => {
+      it('does not detokenise session query params — a token-shaped value passes through literally', async () => {
         await aut.setQueryParams({ q: '[[random|digits|4]]' });
         await aut.request('GET', '/');
         const [req] = mockPerform.mock.calls[0];
-        expect(req.queryString).toMatch(/^q=\d{4}$/);
+        expect(req.queryString).toBe(`q=${encodeURIComponent('[[random|digits|4]]')}`);
       });
 
       describe('setNextRequestQueryParams / mergeNextRequestQueryParams', () => {
@@ -2509,30 +2490,36 @@ describe('API_AUTWrapper', () => {
       });
     });
 
-    // Per the "push detokenisation to the narrowest point of certain use" decision: request()
-    // detokenises method, resourcePath, headers, queryString and body unconditionally, with
-    // no opt-in flag at the call site — Detokeniser.enabled is the only override, reset to
-    // true by afterTest().
-    describe('detokenisation', () => {
+    // Regression coverage for the removal of automatic detokenisation: request() used to
 
-      afterEach(() => {
-        Detokeniser.reset();
-      });
+    // request() for why. A token-shaped value must survive untouched everywhere it could
+    // appear, so a future change doesn't silently reintroduce automatic resolution here.
+    describe('no automatic token resolution', () => {
 
-      it('detokenises a string header value', async () => {
-        await aut.request('GET', '/', {
-          headers: { 'x-greeting': 'Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]' },
+      const TOKEN = '[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]';
+
+      it('a token-shaped method/resourcePath/header/queryString/body all pass through literally', async () => {
+        aut.resourcePathPreamble = `/api-${TOKEN}`;
+        await aut.request(TOKEN, `/users/${TOKEN}`, {
+          headers: { 'x-greeting': TOKEN, 'x-multi': [TOKEN, 'plain-b'] },
+          queryString: `q=${TOKEN}`,
+          body: TOKEN,
         });
         const [req] = mockPerform.mock.calls[0];
-        expect(req.headers['x-greeting']).toBe('Hello world');
+        expect(req.method).toBe(TOKEN);
+        expect(req.resourcePath).toBe(`/api-${TOKEN}/users/${TOKEN}`);
+        expect(req.headers['x-greeting']).toBe(TOKEN);
+        expect(req.headers['x-multi']).toEqual([TOKEN, 'plain-b']);
+        expect(req.queryString).toBe(`q=${TOKEN}`);
+        expect(req.body).toBe(TOKEN);
       });
 
-      it('detokenises every entry of a string[] header value', async () => {
-        await aut.request('GET', '/', {
-          headers: { 'x-multi': ['[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "a"]]', 'plain-b'] },
+      it('a token-shaped value inside an object body (including nested) passes through literally', async () => {
+        await aut.request('POST', '/', {
+          body: { greeting: TOKEN, user: { name: TOKEN }, tags: [TOKEN, 'plain-b'] },
         });
         const [req] = mockPerform.mock.calls[0];
-        expect(req.headers['x-multi']).toEqual(['a', 'plain-b']);
+        expect(req.body).toEqual({ greeting: TOKEN, user: { name: TOKEN }, tags: [TOKEN, 'plain-b'] });
       });
 
       it('leaves a non-string, non-array header value (number/boolean/null) untouched', async () => {
@@ -2546,66 +2533,6 @@ describe('API_AUTWrapper', () => {
         expect(req.headers['x-null']).toBeNull();
       });
 
-      it('detokenises the method', async () => {
-        await aut.request('[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "GET"]]', '/');
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.method).toBe('GET');
-      });
-
-      it('detokenises the resourcePath', async () => {
-        // Token deliberately not placed directly after a '/' — that's the Detokeniser's
-        // escape char, and a real (even-length-prefixed) token there leaves the
-        // surrounding escape run completely untouched rather than collapsed (de-escaping
-        // is skipped entirely once any real token is found in the string) — a sharp,
-        // pre-existing Detokeniser edge case for path-building specifically, not
-        // something this test is about.
-        await aut.request('GET', '/users/id[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "42"]]');
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.resourcePath).toBe('/users/id42');
-      });
-
-      it('detokenises a resourcePathPreamble token as well as the resourcePath itself', async () => {
-        aut.resourcePathPreamble = '/api-[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "v1"]]';
-        await aut.request('GET', '/users');
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.resourcePath).toBe('/api-v1/users');
-      });
-
-      it('detokenises the queryString', async () => {
-        await aut.request('GET', '/search', {
-          queryString: 'q=[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "widgets"]]',
-        });
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.queryString).toBe('q=widgets');
-      });
-
-      it('detokenises a string body', async () => {
-        await aut.request('POST', '/', {
-          body: 'Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]',
-        });
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.body).toBe('Hello world');
-      });
-
-      it('detokenises an object body leaf-by-leaf, leaving it as an object', async () => {
-        await aut.request('POST', '/', {
-          body: { greeting: '[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]', count: 3 },
-        });
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.body).toEqual({ greeting: 'world', count: 3 });
-      });
-
-      it('detokenises nested object/array string leaves within an object body', async () => {
-        await aut.request('POST', '/', {
-          body: {
-            user: { name: '[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "Alice"]]' },
-            tags: ['[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "a"]]', 'plain-b'],
-          },
-        });
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.body).toEqual({ user: { name: 'Alice' }, tags: ['a', 'plain-b'] });
-      });
-
       it('leaves a Buffer body untouched', async () => {
         const buffer = Buffer.from('binary data');
         await aut.request('POST', '/', { body: buffer });
@@ -2617,25 +2544,6 @@ describe('API_AUTWrapper', () => {
         await aut.request('GET', '/');
         const [req] = mockPerform.mock.calls[0];
         expect(req.body).toBeUndefined();
-      });
-
-      it('does not detokenise anything when Detokeniser.enabled is false', async () => {
-        Detokeniser.enabled = false;
-        await aut.request(
-          '[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "GET"]]',
-          '/[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "users"]]',
-          {
-            headers: { 'x-greeting': 'Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]' },
-            queryString: 'q=[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "widgets"]]',
-            body: 'Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]',
-          }
-        );
-        const [req] = mockPerform.mock.calls[0];
-        expect(req.method).toBe('[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "GET"]]');
-        expect(req.resourcePath).toBe('/[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "users"]]');
-        expect(req.headers['x-greeting']).toBe('Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]');
-        expect(req.queryString).toBe('q=[[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "widgets"]]');
-        expect(req.body).toBe('Hello [[setting|processEnvName: "DOES_NOT_EXIST_XYZ", defaultValue: "world"]]');
       });
     });
 

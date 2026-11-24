@@ -1,6 +1,6 @@
 import { Detokeniser, Log, Logger, LogLevels, Settings, Utils } from '@controlium/utils';
 
-import { API_AUTWrapper } from './API_AUTWrapper.js';
+import { API_AUTWrapper } from './API_AUT/API_AUTWrapper.js';
 
 /**
  * Resolves the configured logging level from settings (env var → npm config → profile
@@ -139,9 +139,9 @@ export function afterSuite(): void {
  *
  * Also runs two deliberately independent checks — each catches a failure mode the other
  * structurally can't, see their own doc comments for the full reasoning:
- * - {@link API_AUTWrapper.assertRegistryIsEmpty} — did the previous test's own
+ * - {@link API_AUTWrapper.assertNoAUTsOrAPIsStillRegistered} — did the previous test's own
  *   `afterTest()` run to completion *at all*? Cheap, synchronous, in-memory; runs first.
- * - {@link API_AUTWrapper.assertNoKnownAUTsStillListening} — given that it did, did it
+ * - {@link API_AUTWrapper.assertNoManagedAUTPortsOpen} — given that it did, did it
  *   actually free up every port it claimed to?
  *
  * Throws (aborting this test, loudly) if either finds a problem: silently continuing would
@@ -167,8 +167,8 @@ export function afterSuite(): void {
 export async function beforeTest(): Promise<void> {
   Logger.loggingLevel = resolveLogLevelFromSettings();
   Logger.maxLines = resolveMaxLinesFromSettings();
-  API_AUTWrapper.assertRegistryIsEmpty();
-  await API_AUTWrapper.assertNoKnownAUTsStillListening();
+  API_AUTWrapper.assertNoAUTsOrAPIsStillRegistered();
+  await API_AUTWrapper.assertNoManagedAUTPortsOpen();
   Log.writeLine(LogLevels.FrameworkDebug, 'Controlium framework: test starting');
   Utils.resetPromiseCount();
 }
@@ -188,7 +188,7 @@ export async function beforeTest(): Promise<void> {
  * `Settings`'s resolution context, `Logger`'s output callback, `Detokeniser` (its
  * `enabled` toggle, escape char, and any registered callbacks — `Detokeniser.reset()`
  * already restores all of these; see its own doc comment), every registered
- * `API_AUTWrapper` (closed and deregistered via `closeAllRegistered()` — see its own
+ * `API_AUTWrapper` (closed and deregistered via `closeAllAUTsAndAPIs()` — see its own
  * doc comment for why this is safe/automatic rather than left to each test to remember),
  * and any staged-but-unconsumed one-shot "next request" header override (see
  * `API_AUTWrapper.clearNextRequestHeaders()` — this one's genuinely load-bearing, not
@@ -207,12 +207,13 @@ export async function beforeTest(): Promise<void> {
  * it belongs here, once, covering every current and future driver for free.
  *
  * Ordering is deliberate: `Settings.clearContext()` runs first (matching the ordering a
- * driver's own wiring previously handled by hand), the `API_AUTWrapper` statics
- * (`closeAllRegistered()`, `clearNextRequestHeaders()`) run next so their own log lines
- * are still captured by whatever attach-style callback is active, then the active-resources
- * diagnostic log (see below) runs against the post-cleanup state, and
- * `Logger.clearOutputCallback()` runs last of all, so this function's own log lines above
- * are too.
+ * driver's own wiring previously handled by hand), then `Detokeniser.reset()` (no ordering
+ * constraint of its own — just grouped here with the other ambient-static resets before any
+ * actual teardown work starts), then the `API_AUTWrapper` statics (`closeAllAUTsAndAPIs()`,
+ * `clearNextRequestHeaders()`) so their own log lines are still captured by whatever
+ * attach-style callback is active, then the active-resources diagnostic log (see below) runs
+ * against the post-cleanup state, and `Logger.clearOutputCallback()` runs last of all, so
+ * this function's own log lines above are too.
  *
  * Now async — closing a real AUT is inherently asynchronous — so a driver's `After`/
  * `afterEach`-equivalent wiring must `await` (or return) this.
@@ -220,7 +221,7 @@ export async function beforeTest(): Promise<void> {
 export async function afterTest(): Promise<void> {
   Settings.clearContext();
   Detokeniser.reset();
-  await API_AUTWrapper.closeAllRegistered();
+  await API_AUTWrapper.closeAllAUTsAndAPIs();
   API_AUTWrapper.clearNextRequestHeaders();
 
   // Diagnostic visibility only, for now — purely logged, nothing acted on. Uses the

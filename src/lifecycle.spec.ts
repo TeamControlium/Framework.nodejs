@@ -1,6 +1,6 @@
 import { Detokeniser, Log, Logger, Settings, Utils } from '@controlium/utils';
 
-import { API_AUTWrapper } from './API_AUTWrapper';
+import { API_AUTWrapper } from './API_AUT/API_AUTWrapper';
 import {
   afterSuite,
   afterTest,
@@ -223,8 +223,8 @@ describe('lifecycle', () => {
       expect(Detokeniser.enabled).toBe(true);
     });
 
-    it('closes and deregisters every registered AUT via closeAllRegistered()', async () => {
-      const closeAllSpy = vi.spyOn(API_AUTWrapper, 'closeAllRegistered').mockResolvedValue(undefined);
+    it('closes and deregisters every registered AUT via closeAllAUTsAndAPIs()', async () => {
+      const closeAllSpy = vi.spyOn(API_AUTWrapper, 'closeAllAUTsAndAPIs').mockResolvedValue(undefined);
       await afterTest();
       expect(closeAllSpy).toHaveBeenCalledTimes(1);
     });
@@ -238,7 +238,7 @@ describe('lifecycle', () => {
     it('clears Settings before its own logging, closes registered AUTs (and clears any pending override) next, logs the active-resources diagnostic and outstanding-promise state after that, and the Logger callback last — so its own log lines are still captured by whatever callback was active', async () => {
       const callOrder: string[] = [];
       vi.spyOn(Settings, 'clearContext').mockImplementation(() => callOrder.push('settings'));
-      vi.spyOn(API_AUTWrapper, 'closeAllRegistered').mockImplementation(async () => { callOrder.push('autclose'); });
+      vi.spyOn(API_AUTWrapper, 'closeAllAUTsAndAPIs').mockImplementation(async () => { callOrder.push('autclose'); });
       vi.spyOn(API_AUTWrapper, 'clearNextRequestHeaders').mockImplementation(() => { callOrder.push('nextreqclear'); });
       vi.spyOn(Log, 'writeLine').mockImplementation(() => callOrder.push('log') as unknown as void);
       vi.spyOn(Logger, 'clearOutputCallback').mockImplementation(() => callOrder.push('logger'));

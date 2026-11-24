@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 
-import { API_AUTWrapper } from '../src/API_AUTWrapper';
+import { API_AUTWrapper } from '../src/API_AUT/API_AUTWrapper';
 
 import { bootstrap, closeHandler, getUrlHandler } from './dummy-nestJS-server/bootstrap';
 import { DOWNSTREAM_URL } from './dummy-nestJS-server/downstream/downstream.constants';
@@ -19,7 +19,7 @@ describe('API_AUTWrapper against a real NestJS AUT', () => {
 
   beforeAll(async () => {
     mockServer.listen();
-    aut = await API_AUTWrapper.create({
+    aut = await API_AUTWrapper.startNewApplication({
       appName: 'DummyNest',
       port: PORT,
       bootstrapper: bootstrap,
@@ -38,7 +38,7 @@ describe('API_AUTWrapper against a real NestJS AUT', () => {
   });
 
   it('starts a real NestJS server and reports live', async () => {
-    expect(aut.isControlled).toBe(true);
+    expect(aut.isSelfManaged).toBe(true);
     await expect(aut.isLive()).resolves.toBe(true);
   });
 

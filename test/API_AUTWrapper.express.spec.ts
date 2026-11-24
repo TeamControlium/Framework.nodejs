@@ -1,6 +1,6 @@
 import type { Server } from 'http';
 
-import { API_AUTWrapper } from '../src/API_AUTWrapper';
+import { API_AUTWrapper } from '../src/API_AUT/API_AUTWrapper';
 
 import { bootstrap, closeHandler, getUrlHandler } from './dummy-express-server/bootstrap';
 
@@ -10,7 +10,7 @@ describe('API_AUTWrapper against a real Express AUT', () => {
   let aut: API_AUTWrapper<Server>;
 
   beforeAll(async () => {
-    aut = await API_AUTWrapper.create({
+    aut = await API_AUTWrapper.startNewApplication({
       appName: 'DummyExpress',
       port: PORT,
       bootstrapper: bootstrap,
@@ -24,7 +24,7 @@ describe('API_AUTWrapper against a real Express AUT', () => {
   });
 
   it('starts a real Express server and reports live', async () => {
-    expect(aut.isControlled).toBe(true);
+    expect(aut.isSelfManaged).toBe(true);
     await expect(aut.isLive()).resolves.toBe(true);
   });
 
@@ -51,7 +51,7 @@ describe('API_AUTWrapper against a real Express AUT', () => {
     // callback never fires on error, so without an `'error'` listener this would hang until
     // autHandlerTimeout instead of rejecting immediately with the real EADDRINUSE cause.
     await expect(
-      API_AUTWrapper.create({
+      API_AUTWrapper.startNewApplication({
         appName: 'ExpressPortClash',
         port: PORT,
         bootstrapper: bootstrap,
