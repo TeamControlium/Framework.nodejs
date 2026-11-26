@@ -7,7 +7,7 @@
   "contributors": [
     "Mat Walker <v-mwalk@alexview.com>"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/TeamControlium/test-framework"
