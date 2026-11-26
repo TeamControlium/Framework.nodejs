@@ -1,4 +1,4 @@
-![License](https://img.shields.io/github/license/TeamControlium/framework)
+![License](https://img.shields.io/github/license/TeamControlium/Framework.nodejs)
 <p align="center">
   <img src="https://github.com/TeamControlium/.github/raw/main/branding/teamcontrolium-banner.svg" width="100%" alt="TeamControlium — test automation frameworks & tooling">
 </p>
@@ -32,9 +32,9 @@ import { API_AUTWrapper, beforeSuite, afterSuite, beforeTest, afterTest } from '
 
 | Export | What it does |
 |---|---|
-| `API_AUTWrapper` | Wraps one locally-running HTTP service under test — start it, send requests, record every transaction, shut it down. Never touches the AUT handle itself (it's opaque, caller-supplied `bootstrapper`/`closeHandler`/`getUrlHandler` functions do that), so it stays framework-agnostic to whatever actually runs the AUT (NestJS, a raw `http.Server`, Fastify, …). Four static factories cover the two shapes a target can take: `startNewApplication`/`prepareApplication` for an AUT this process starts and owns; `registerAPI`/`prepareAPI` for an already-running API this process only talks to. |
-| `beforeSuite`, `afterSuite`, `beforeTest`, `afterTest` | Runner-agnostic lifecycle functions a test-runner driver calls from its own native hooks (see `@controlium/cucumber`'s `wireCucumberHooks` for the reference wiring). Expose primitives, not policy — a driver decides when to call them, this package doesn't assume a particular hook model. |
-| `resolveLogLevelFromSettings`, `resolveMaxLinesFromSettings`, `resolveStepTimeoutFromSettings` | Settings resolution (env var → npm config → profile parameter → default) for the three cross-cutting values every test-runner driver needs the same way — log level, log line-count cap, and default step timeout. Called by `beforeTest` itself, so any driver gets per-test resolution for free with no wiring of its own. |
+| `API_AUTWrapper` | Manages HTTP targets for API-level testing — either an AUT/s this process itself bootstraps, make API requests against, and later closes (`startNewApplication`/`prepareApplication`+`startApplication`), and/or API endpoints requests sent to and responses received from (`registerAPI`/`prepareAPI`). Instances of either kind coexist, named in one shared registry. Suite-wide registry/leak cleanup available with per-endpoint instance methods covering session config (headers, query params, resource-path), issuing requests and reading back recorded responses, and a liveness checks. All safe and without endpoint health assumptions. |
+| `LifecycleHooks` | Runner-agnostic `beforeSuite`/`afterSuite`/`beforeTest`/`afterTest` static methods test-runner drivers can call from own native hooks. |
+| `SettingsRegistry` | Declarative catalogue of cross-cutting settings (env var → npm config → profile parameter → default) — `register()` once per setting, `resolve()` from any call site, so every caller resolves the same setting the same way. `lifecycle.ts` registers the framework's own settings (Log Level, Log Max Lines, Default Step Timeout) at module load. |
 
 ### Typical usage — single AUT (e.g. in a Cucumber hook file)
 
