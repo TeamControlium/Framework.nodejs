@@ -5,9 +5,9 @@
 
 # @controlium/framework
 
-**Status: work in progress** Layer 2 of [Controlium](https://github.com/TeamControlium)
+**Status: work in progress — API-only so far.** Layer 2 of [Controlium](https://github.com/TeamControlium)
 ecosystem, built on [`@controlium/utils`](https://github.com/TeamControlium/Utilities.nodejs).
-`API_AUTWrapper` (API-level AUT testing) is currently only wrapper;
+`API_AUTWrapper` (API-level AUT testing) is the only wrapper that exists today;
 `Browser_AUTWrapper` (browser/UI AUT support) is not started. Test-runner-agnostic by design —
 `@controlium/cucumber` wires this package's lifecycle functions into Cucumber-JS, but nothing
 here assumes Cucumber is the only consumer.

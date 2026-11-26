@@ -7,7 +7,7 @@
   "contributors": [
     "Mat Walker <v-mwalk@alexview.com>"
   ],
-  "license": "GPL-3.0-only",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TeamControlium/Framework.nodejs.git"
