@@ -1,15 +1,8 @@
 import { Detokeniser, Log, Logger, Settings, Utils } from '@controlium/utils';
 
 import { API_AUTWrapper } from './API_AUT/API_AUTWrapper';
-import {
-  afterSuite,
-  afterTest,
-  beforeSuite,
-  beforeTest,
-  resolveLogLevelFromSettings,
-  resolveMaxLinesFromSettings,
-  resolveStepTimeoutFromSettings,
-} from './lifecycle';
+import { LifecycleHooks } from './lifecycle';
+import { SettingsRegistry } from './settingsRegistry';
 
 describe('lifecycle', () => {
 
@@ -21,13 +14,13 @@ describe('lifecycle', () => {
 
     it('beforeSuite does not throw and logs', () => {
       const spy = vi.spyOn(Log, 'writeLine');
-      expect(() => beforeSuite()).not.toThrow();
+      expect(() => LifecycleHooks.beforeSuite()).not.toThrow();
       expect(spy).toHaveBeenCalled();
     });
 
     it('afterSuite does not throw and logs', () => {
       const spy = vi.spyOn(Log, 'writeLine');
-      expect(() => afterSuite()).not.toThrow();
+      expect(() => LifecycleHooks.afterSuite()).not.toThrow();
       expect(spy).toHaveBeenCalled();
     });
   });
@@ -37,7 +30,7 @@ describe('lifecycle', () => {
     it('resets the outstanding promise count and logs', async () => {
       const resetSpy = vi.spyOn(Utils, 'resetPromiseCount');
       const logSpy = vi.spyOn(Log, 'writeLine');
-      await beforeTest();
+      await LifecycleHooks.beforeTest();
       expect(resetSpy).toHaveBeenCalledTimes(1);
       expect(logSpy).toHaveBeenCalledWith(expect.any(Number), expect.stringContaining('test starting'));
     });
@@ -51,13 +44,13 @@ describe('lifecycle', () => {
 
     it('resolves and applies the logging level from settings', async () => {
       process.env.TEST_LOG_LEVEL = 'Test Information';
-      await beforeTest();
+      await LifecycleHooks.beforeTest();
       expect(Logger.loggingLevel).toBe(Logger.Levels.TestInformation);
     });
 
     it('resolves and applies maxLines from settings', async () => {
       process.env.TEST_LOG_MAX_LINES = '500';
-      await beforeTest();
+      await LifecycleHooks.beforeTest();
       expect(Logger.maxLines).toBe(500);
     });
 
@@ -69,30 +62,30 @@ describe('lifecycle', () => {
       vi.spyOn(Log, 'writeLine').mockImplementation((level: number, text: string) => {
         if (text.includes('test starting')) levelAtLogTime = Logger.loggingLevel;
       });
-      await beforeTest();
+      await LifecycleHooks.beforeTest();
       expect(levelAtLogTime).toBe(Logger.Levels.TestInformation);
     });
   });
 
-  describe('resolveLogLevelFromSettings', () => {
+  describe("SettingsRegistry.resolve('Log Level')", () => {
 
     afterEach(() => {
       delete process.env.TEST_LOG_LEVEL;
     });
 
     it('applies the built-in default (Framework Debug) when no overriding source is set', () => {
-      expect(resolveLogLevelFromSettings()).toBe('Framework Debug');
+      expect(SettingsRegistry.resolve<string>('Log Level')).toBe('Framework Debug');
     });
 
     it('resolves from the TEST_LOG_LEVEL env var', () => {
       process.env.TEST_LOG_LEVEL = 'Test Information';
-      expect(resolveLogLevelFromSettings()).toBe('Test Information');
+      expect(SettingsRegistry.resolve<string>('Log Level')).toBe('Test Information');
     });
 
     it('resolves from Settings context profile parameters ($.logLevel) when no env var is set', () => {
       Settings.setContext({ sourceName: 'test', parameters: { logLevel: 'Warning' } });
       try {
-        expect(resolveLogLevelFromSettings()).toBe('Warning');
+        expect(SettingsRegistry.resolve<string>('Log Level')).toBe('Warning');
       } finally {
         Settings.clearContext();
       }
@@ -102,40 +95,40 @@ describe('lifecycle', () => {
       process.env.TEST_LOG_LEVEL = 'Error';
       Settings.setContext({ sourceName: 'test', parameters: { logLevel: 'Warning' } });
       try {
-        expect(resolveLogLevelFromSettings()).toBe('Error');
+        expect(SettingsRegistry.resolve<string>('Log Level')).toBe('Error');
       } finally {
         Settings.clearContext();
       }
     });
   });
 
-  describe('resolveMaxLinesFromSettings', () => {
+  describe("SettingsRegistry.resolve('Log Max Lines')", () => {
 
     afterEach(() => {
       delete process.env.TEST_LOG_MAX_LINES;
     });
 
     it('applies the built-in default (200) when no overriding source is set', () => {
-      expect(resolveMaxLinesFromSettings()).toBe(200);
+      expect(SettingsRegistry.resolve<number>('Log Max Lines')).toBe(200);
     });
 
     it('parses a numeric value that comes back as a string from an env var', () => {
       process.env.TEST_LOG_MAX_LINES = '500';
-      expect(resolveMaxLinesFromSettings()).toBe(500);
+      expect(SettingsRegistry.resolve<number>('Log Max Lines')).toBe(500);
     });
 
     it('rejects a resolved value below 3', () => {
       process.env.TEST_LOG_MAX_LINES = '2';
-      expect(() => resolveMaxLinesFromSettings()).toThrow(/must be an integer >= 3/);
+      expect(() => SettingsRegistry.resolve<number>('Log Max Lines')).toThrow(/must be an integer >= 3/);
     });
 
     it('rejects a non-numeric resolved value', () => {
       process.env.TEST_LOG_MAX_LINES = 'not-a-number';
-      expect(() => resolveMaxLinesFromSettings()).toThrow(/must be an integer >= 3/);
+      expect(() => SettingsRegistry.resolve<number>('Log Max Lines')).toThrow(/must be an integer >= 3/);
     });
   });
 
-  describe('resolveStepTimeoutFromSettings', () => {
+  describe("SettingsRegistry.resolve('Default Step Timeout')", () => {
 
     afterEach(() => {
       delete process.env.TEST_STEP_TIMEOUT;
@@ -143,31 +136,31 @@ describe('lifecycle', () => {
     });
 
     it('applies the built-in default (30000) when no overriding source is set', () => {
-      expect(resolveStepTimeoutFromSettings()).toBe(30000);
+      expect(SettingsRegistry.resolve<number>('Default Step Timeout')).toBe(30000);
     });
 
-    it('applies a caller-supplied default value', () => {
-      expect(resolveStepTimeoutFromSettings({ defaultValue: 5000 })).toBe(5000);
+    it('applies a caller-supplied default value via overrides', () => {
+      expect(SettingsRegistry.resolve<number>('Default Step Timeout', { defaultValue: 5000 })).toBe(5000);
     });
 
     it('resolves from the TEST_STEP_TIMEOUT env var by default', () => {
       process.env.TEST_STEP_TIMEOUT = '12345';
-      expect(resolveStepTimeoutFromSettings()).toBe(12345);
+      expect(SettingsRegistry.resolve<number>('Default Step Timeout')).toBe(12345);
     });
 
-    it('a caller can override the env var name entirely (e.g. a driver with its own established convention)', () => {
+    it('a caller can override the env var name entirely via overrides (e.g. a driver with its own established convention)', () => {
       process.env.CUCUMBER_STEP_TIMEOUT = '98765';
-      expect(resolveStepTimeoutFromSettings({ processEnvName: 'CUCUMBER_STEP_TIMEOUT' })).toBe(98765);
+      expect(SettingsRegistry.resolve<number>('Default Step Timeout', { processEnvName: 'CUCUMBER_STEP_TIMEOUT' })).toBe(98765);
     });
 
     it('rejects a resolved value that is not a valid number', () => {
       process.env.TEST_STEP_TIMEOUT = 'not-a-number';
-      expect(() => resolveStepTimeoutFromSettings()).toThrow(/must be a positive finite number/);
+      expect(() => SettingsRegistry.resolve<number>('Default Step Timeout')).toThrow(/must be a positive finite number/);
     });
 
     it('rejects a non-positive resolved value', () => {
       process.env.TEST_STEP_TIMEOUT = '0';
-      expect(() => resolveStepTimeoutFromSettings()).toThrow(/must be a positive finite number/);
+      expect(() => SettingsRegistry.resolve<number>('Default Step Timeout')).toThrow(/must be a positive finite number/);
     });
   });
 
@@ -178,7 +171,7 @@ describe('lifecycle', () => {
       const resetSpy = vi.spyOn(Utils, 'resetPromiseCount');
       const logSpy = vi.spyOn(Log, 'writeLine');
 
-      await afterTest();
+      await LifecycleHooks.afterTest();
 
       expect(resetSpy).toHaveBeenCalledTimes(1);
       expect(logSpy).toHaveBeenCalledWith(expect.any(Number), expect.stringContaining('test ending'));
@@ -189,49 +182,48 @@ describe('lifecycle', () => {
       const resetSpy = vi.spyOn(Utils, 'resetPromiseCount');
       const logSpy = vi.spyOn(Log, 'writeLine');
 
-      await expect(afterTest()).resolves.not.toThrow();
+      await expect(LifecycleHooks.afterTest()).resolves.not.toThrow();
 
       expect(logSpy).toHaveBeenCalledWith(expect.any(Number), expect.stringContaining('2 promise(s) still outstanding'));
       expect(resetSpy).toHaveBeenCalledTimes(1);
     });
 
-    // Per [[feedback_test_atomicity_non_negotiable]]: afterTest owns clearing every
-    // per-test, framework-level ambient static — a driver's own Before-side wiring
-    // only ever sets these, never clears them, so a test must never be able to leak
-    // this state into whatever runs next regardless of which driver is in use.
+    // afterTest owns clearing every per-test, framework-level ambient static — a driver's
+    // own Before-side wiring only ever sets these, never clears them, so a test must never
+    // be able to leak this state into whatever runs next regardless of which driver is in use.
     it('clears the Settings context', async () => {
       const clearSpy = vi.spyOn(Settings, 'clearContext');
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(clearSpy).toHaveBeenCalledTimes(1);
     });
 
     it('clears the Logger output callback', async () => {
       const clearSpy = vi.spyOn(Logger, 'clearOutputCallback');
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(clearSpy).toHaveBeenCalledTimes(1);
     });
 
     it('resets Detokeniser (enabled toggle, escape char, callbacks) via its own reset()', async () => {
       const resetSpy = vi.spyOn(Detokeniser, 'reset');
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(resetSpy).toHaveBeenCalledTimes(1);
     });
 
     it('end-to-end: a test turning Detokeniser off does not leak into the next test', async () => {
       Detokeniser.enabled = false;
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(Detokeniser.enabled).toBe(true);
     });
 
     it('closes and deregisters every registered AUT via closeAllAUTsAndAPIs()', async () => {
       const closeAllSpy = vi.spyOn(API_AUTWrapper, 'closeAllAUTsAndAPIs').mockResolvedValue(undefined);
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(closeAllSpy).toHaveBeenCalledTimes(1);
     });
 
     it('clears any staged-but-unconsumed one-shot next-request header override', async () => {
       const clearSpy = vi.spyOn(API_AUTWrapper, 'clearNextRequestHeaders');
-      await afterTest();
+      await LifecycleHooks.afterTest();
       expect(clearSpy).toHaveBeenCalledTimes(1);
     });
 
@@ -243,7 +235,7 @@ describe('lifecycle', () => {
       vi.spyOn(Log, 'writeLine').mockImplementation(() => callOrder.push('log') as unknown as void);
       vi.spyOn(Logger, 'clearOutputCallback').mockImplementation(() => callOrder.push('logger'));
 
-      await afterTest();
+      await LifecycleHooks.afterTest();
 
       expect(callOrder).toEqual(['settings', 'autclose', 'nextreqclear', 'log', 'log', 'logger']);
     });

@@ -1,8 +1,0 @@
-node_modules/
-dist/
-coverage/
-.claude/
-*.log
-.env
-CLAUDE.*
-
